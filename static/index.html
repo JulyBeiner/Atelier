@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+  /* Jul Beiner brand tokens. Rough balance: 70% cream/peach/sage, 20% espresso, 10% accents. */
+  :root {
+    --cream: #FDFBF7;
+    --peach: #F9E1D6;
+    --coral: #EFA48C;
+    --sage: #DCDDC4;
+    --olive: #A8A97A;
+    --olive-deep: #5E6440;
+    --ink: #2B2420;
+    --muted: #74695F;
+    --line: #E9E0D3;
+    --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+    --sans: "Instrument Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --hand: "Caveat", "Segoe Print", cursive;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 28px 120px; }
+
+  /* Top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .wordmark { font-family: var(--serif); font-size: 26px; letter-spacing: -0.01em; }
+  .by {
+    font-family: var(--hand); font-size: 20px; color: var(--olive-deep);
+    transform: rotate(-3deg); white-space: nowrap;
+  }
+  .by i { color: var(--coral); font-style: normal; }
+
+  /* Hero: the headline is the status */
+  .hero { padding: 72px 0 8px; }
+  h1 {
+    font-family: var(--serif); font-weight: 400;
+    font-size: clamp(44px, 7vw, 76px); line-height: 1.02; letter-spacing: -0.02em;
+    margin: 0; max-width: 14ch; text-wrap: balance;
+  }
+  h1 em {
+    font-style: italic;
+    background: linear-gradient(transparent 64%, rgba(239, 164, 140, 0.5) 64%);
+    padding: 0 0.06em;
+  }
+  .lede { color: var(--muted); margin: 18px 0 0; font-size: 16px; }
+
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 32px; }
+  .stat {
+    display: inline-flex; align-items: baseline; gap: 8px;
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px 6px 14px;
+    font-size: 13px; color: var(--muted);
+  }
+  .stat b { font-family: var(--serif); font-weight: 400; font-size: 20px; color: var(--ink); line-height: 1; }
+
+  /* Section headings */
+  h2 {
+    font-family: var(--serif); font-weight: 400; font-size: 30px; letter-spacing: -0.01em;
+    margin: 0 0 20px;
+  }
+  section { margin-top: 72px; }
+
+  /* Approval cards: flat sage, no shadow */
+  .card {
+    background: var(--sage); border-radius: var(--radius);
+    padding: 26px 28px; margin-bottom: 14px;
+  }
+  .meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+  .tag {
+    font-size: 12px; font-weight: 500; color: var(--olive-deep);
+    background: var(--cream); border-radius: 999px; padding: 3px 12px;
+  }
+  .card h3 {
+    font-family: var(--serif); font-weight: 400; font-size: 28px; line-height: 1.15;
+    letter-spacing: -0.01em; margin: 14px 0 6px;
+  }
+  .card p { margin: 0; color: #4A413A; white-space: pre-wrap; max-width: 62ch; }
+  .actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; align-items: center; }
+  .actions input { flex: 1 1 260px; border-color: transparent; }
+
+  /* Buttons: pills. One strong button per card (Approve), the rest stay quiet. */
+  button {
+    font: inherit; font-weight: 500; cursor: pointer;
+    border-radius: 999px; padding: 10px 22px;
+    border: 1px solid var(--olive-deep); background: var(--olive-deep); color: var(--cream);
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  button:hover { background: #4E5435; border-color: #4E5435; }
+  button.quiet { background: transparent; color: var(--ink); border-color: rgba(43, 36, 32, 0.28); }
+  button.quiet:hover { border-color: var(--ink); background: transparent; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible {
+    outline: 2px solid var(--olive-deep); outline-offset: 2px;
+  }
+
+  /* Empty state: soft peach block with a handwritten note */
+  .empty-block {
+    background: var(--peach); border-radius: var(--radius);
+    padding: 34px 28px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .empty-block .note { font-family: var(--hand); font-size: 26px; color: var(--olive-deep); transform: rotate(-3deg); }
+  .empty-block p { margin: 0; color: #4A413A; }
+  .empty { color: var(--muted); padding: 8px 0; }
+
+  /* Two columns */
+  .columns { display: grid; grid-template-columns: 1.15fr 1fr; gap: 64px; }
+  .columns section { margin-top: 72px; }
+  @media (max-width: 780px) { .columns { grid-template-columns: 1fr; gap: 0; } }
+
+  .feed, .clients { list-style: none; margin: 0; padding: 0; }
+  .feed li { padding: 16px 0; border-top: 1px solid var(--line); }
+  .feed li:first-child, .clients li:first-child { border-top: 0; padding-top: 0; }
+  .feed .title { font-size: 16px; margin-top: 4px; }
+  .state { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; color: var(--ink); }
+  .state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--olive-deep); }
+  .state.done::before { background: var(--olive); }
+  .state.rejected::before { background: var(--coral); }
+  .feedback { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  .clients li {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 14px 0; border-top: 1px solid var(--line); font-size: 16px;
+  }
+  a { color: var(--olive-deep); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .clients a { font-size: 14px; }
+
+  /* Forms live inside quiet disclosures: they are secondary to approving. */
+  details { margin-top: 22px; }
+  summary {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    font-weight: 500; color: var(--olive-deep);
+    border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 8px 18px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+"; font-size: 17px; line-height: 1; }
+  details[open] summary::before { content: "–"; }
+  summary:hover { border-color: var(--olive-deep); }
+  details form { margin-top: 18px; }
+
+  form { display: grid; gap: 14px; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  form button { justify-self: start; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input, select, textarea {
+    font: inherit; color: var(--ink); background: #FFFFFF;
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; width: 100%;
+  }
+  input::placeholder { color: #A39A90; }
+  textarea { resize: vertical; }
+
+  .task-panel { background: #F8F3EA; border-radius: var(--radius); padding: 26px 28px; }
+  .task-panel h2 { margin-bottom: 6px; }
+  .task-panel > p { margin: 0; color: var(--muted); }
+
+  #error {
+    display: none; margin-top: 28px; padding: 14px 18px; border-radius: 12px;
+    background: var(--peach); color: var(--ink); border-left: 3px solid var(--coral);
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <div class="wordmark">Atelier</div>
+    <div class="by">by julbeiner <i>♥</i></div>
+  </div>
+
+  <header class="hero">
+    <h1 id="headline">Los agentes hacen. Tú <em>decides</em>.</h1>
+    <p class="lede" id="lede">Cargando el panel…</p>
+    <div class="stats">
+      <span class="stat"><b id="count-pending">0</b> para aprobar</span>
+      <span class="stat"><b id="count-done">0</b> hechas</span>
+      <span class="stat"><b id="count-clients">0</b> clientes</span>
+    </div>
+    <div id="error" role="alert"></div>
+  </header>
+
+  <section aria-labelledby="pending-title">
+    <h2 id="pending-title">Para aprobar</h2>
+    <div id="pending"></div>
+  </section>
+
+  <div class="columns">
+    <section aria-labelledby="feed-title">
+      <h2 id="feed-title">Actividad</h2>
+      <ul class="feed" id="feed"></ul>
+    </section>
+
+    <section aria-labelledby="clients-title">
+      <h2 id="clients-title">Clientes</h2>
+      <ul class="clients" id="clients"></ul>
+      <details>
+        <summary>Añadir cliente</summary>
+        <form id="client-form">
+          <div><label for="client-name">Nombre</label><input id="client-name" required maxlength="120"></div>
+          <div><label for="client-website">Web (opcional)</label><input id="client-website" maxlength="300" placeholder="https://"></div>
+          <button type="submit">Guardar cliente</button>
+        </form>
+      </details>
+    </section>
+  </div>
+
+  <section class="task-panel" aria-labelledby="task-title-heading">
+    <h2 id="task-title-heading">Nueva tarea</h2>
+    <p>Para probar el panel a mano. Más adelante, las tareas las dejarán aquí los agentes.</p>
+    <details>
+      <summary>Crear una tarea</summary>
+      <form id="task-form">
+        <div class="row">
+          <div><label for="task-client">Cliente</label><select id="task-client" required></select></div>
+          <div>
+            <label for="task-department">Departamento</label>
+            <select id="task-department">
+              <option value="web">Web</option>
+              <option value="brand">Marca</option>
+              <option value="marketing">Marketing digital</option>
+              <option value="automations">Automatizaciones</option>
+              <option value="maintenance">Mantenimiento</option>
+              <option value="detective">Detective</option>
+            </select>
+          </div>
+          <div>
+            <label for="task-importance">Tipo</label>
+            <select id="task-importance">
+              <option value="important">Importante: pide mi aprobación</option>
+              <option value="small">Pequeña: solo me avisa</option>
+            </select>
+          </div>
+        </div>
+        <div><label for="task-title">Título</label><input id="task-title" required maxlength="200"></div>
+        <div><label for="task-description">Descripción (opcional)</label><textarea id="task-description" rows="3" maxlength="4000"></textarea></div>
+        <button type="submit">Crear tarea</button>
+      </form>
+    </details>
+  </section>
+
+</div>
+
+<script>
+const DEPARTMENTS = {
+  brand: "Marca", web: "Web", marketing: "Marketing digital",
+  automations: "Automatizaciones", maintenance: "Mantenimiento", detective: "Detective",
+};
+const STATES = { approved: "Aprobada", rejected: "Rechazada", done: "Hecha" };
+
+const $ = (id) => document.getElementById(id);
+
+// Build elements with textContent only, so text coming from agents is never run as HTML.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function showError(message) {
+  $("error").textContent = message;
+  $("error").style.display = message ? "block" : "none";
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "Error " + response.status);
+  }
+  return response.json();
+}
+
+function post(path, data) {
+  return api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data || {}),
+  });
+}
+
+// The headline tells me the state of the day; the last word gets the brand marker.
+function setHeadline(pendingCount) {
+  const headline = $("headline");
+  if (pendingCount === 0) {
+    headline.replaceChildren("Todo al ", el("em", "", "día"), ".");
+    $("lede").textContent = "Los agentes no tienen nada esperando tu decisión.";
+  } else {
+    const things = pendingCount === 1 ? "1 cosa espera tu " : pendingCount + " cosas esperan tu ";
+    headline.replaceChildren(things, el("em", "", "sí"), ".");
+    $("lede").textContent = "Los agentes lo han dejado listo. Nada se publica hasta que tú lo apruebes.";
+  }
+}
+
+function pendingCard(task) {
+  const card = el("article", "card");
+  const meta = el("div", "meta");
+  meta.append(el("span", "tag", DEPARTMENTS[task.department] || task.department), el("span", "", task.client_name));
+  card.append(meta, el("h3", "", task.title));
+  if (task.description) card.append(el("p", "", task.description));
+
+  const actions = el("div", "actions");
+  const note = el("input");
+  note.placeholder = "Nota para el agente (opcional)";
+  note.maxLength = 2000;
+  note.setAttribute("aria-label", "Nota para el agente");
+  const approve = el("button", "", "Aprobar");
+  const reject = el("button", "quiet", "Rechazar");
+  const run = (action) => {
+    approve.disabled = reject.disabled = true;
+    decide(task.id, action, note.value);
+  };
+  approve.onclick = () => run("approve");
+  reject.onclick = () => run("reject");
+  actions.append(note, approve, reject);
+  card.append(actions);
+  return card;
+}
+
+function emptyPending() {
+  const block = el("div", "empty-block");
+  block.append(el("span", "note", "nada pendiente"), el("p", "", "Cuando un agente necesite tu decisión, aparecerá aquí."));
+  return block;
+}
+
+function feedItem(task) {
+  const item = el("li");
+  const meta = el("div", "meta");
+  meta.append(
+    el("span", "state " + task.status, STATES[task.status] || task.status),
+    el("span", "", (DEPARTMENTS[task.department] || task.department) + " · " + task.client_name),
+  );
+  item.append(meta, el("div", "title", task.title));
+  if (task.feedback) item.append(el("div", "feedback", "Tu nota: " + task.feedback));
+  return item;
+}
+
+async function decide(taskId, action, feedback) {
+  try {
+    await post("/api/tasks/" + taskId + "/" + action, { feedback });
+  } catch (error) { showError(error.message); }
+  await refresh();
+}
+
+async function refresh() {
+  try {
+    const [clients, tasks] = await Promise.all([api("/api/clients"), api("/api/tasks")]);
+    showError("");
+
+    const pending = tasks.filter((task) => task.status === "pending");
+    const history = tasks.filter((task) => task.status !== "pending");
+
+    setHeadline(pending.length);
+    $("count-pending").textContent = pending.length;
+    $("count-done").textContent = history.filter((task) => task.status !== "rejected").length;
+    $("count-clients").textContent = clients.length;
+
+    // Do not rebuild the cards while I am typing a note in one of them.
+    const typing = document.activeElement && $("pending").contains(document.activeElement)
+      && document.activeElement.tagName === "INPUT" && document.activeElement.value;
+    if (!typing) {
+      $("pending").replaceChildren(...(pending.length ? pending.map(pendingCard) : [emptyPending()]));
+    }
+    $("feed").replaceChildren(
+      ...(history.length ? history.map(feedItem) : [el("li", "empty", "Todavía no hay actividad.")])
+    );
+
+    $("clients").replaceChildren(...clients.map((client) => {
+      const item = el("li");
+      item.append(el("span", "", client.name));
+      if (/^https?:\/\//i.test(client.website)) {
+        const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
+        link.href = client.website;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        item.append(link);
+      }
+      return item;
+    }));
+
+    const selected = $("task-client").value;
+    $("task-client").replaceChildren(...clients.map((client) => {
+      const option = el("option", "", client.name);
+      option.value = client.id;
+      return option;
+    }));
+    if (selected) $("task-client").value = selected;
+  } catch (error) { showError("No se pudo cargar el panel: " + error.message); }
+}
+
+$("client-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await post("/api/clients", { name: $("client-name").value, website: $("client-website").value });
+    event.target.reset();
+    await refresh();
+  } catch (error) { showError(error.message); }
+});
+
+$("task-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await post("/api/tasks", {
+      client_id: Number($("task-client").value),
+      department: $("task-department").value,
+      importance: $("task-importance").value,
+      title: $("task-title").value,
+      description: $("task-description").value,
+    });
+    $("task-title").value = "";
+    $("task-description").value = "";
+    await refresh();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) { showError(error.message); }
+});
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
