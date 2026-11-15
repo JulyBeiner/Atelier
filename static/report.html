@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Informe de la web | Atelier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+  /* Jul Beiner brand tokens, the same as the panel. */
+  :root {
+    --cream: #FDFBF7;
+    --peach: #F9E1D6;
+    --coral: #EFA48C;
+    --sage: #DCDDC4;
+    --olive: #A8A97A;
+    --olive-deep: #5E6440;
+    --ink: #2B2420;
+    --soft: #4A413A;
+    --muted: #74695F;
+    --line: #E9E0D3;
+    --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+    --sans: "Instrument Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --hand: "Caveat", "Segoe Print", cursive;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+  body {
+    margin: 0; background: var(--cream); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 28px 160px; }
+  a { color: var(--olive-deep); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--olive-deep); outline-offset: 2px;
+  }
+  [hidden] { display: none !important; }
+
+  /* Top bar */
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .back { font-weight: 500; text-decoration: none; border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 7px 16px; }
+  .back:hover { border-color: var(--olive-deep); }
+  .wordmark { font-family: var(--serif); font-size: 24px; letter-spacing: -0.01em; }
+
+  /* Opening: the verdict is the headline */
+  .opening { padding: 64px 0 0; }
+  .whose { color: var(--muted); margin: 0 0 14px; }
+  h1 {
+    font-family: var(--serif); font-weight: 400; letter-spacing: -0.015em;
+    font-size: clamp(30px, 4.4vw, 50px); line-height: 1.12; margin: 0; max-width: 29ch; text-wrap: balance;
+  }
+  .notes { margin: 28px 0 0; padding: 16px 20px; background: var(--peach); border-radius: 14px; max-width: 70ch; }
+  .notes p { margin: 0; color: var(--soft); }
+  .notes p + p { margin-top: 6px; }
+
+  section { margin-top: 84px; }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: 32px; letter-spacing: -0.01em; line-height: 1.15; margin: 0 0 8px; }
+  .intro { color: var(--muted); margin: 0 0 26px; max-width: 64ch; }
+
+  /* Scores: one line per area, on the same 0 to 100 ruler, so before and after can be compared */
+  .scores { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .score {
+    display: grid; grid-template-columns: minmax(200px, 1.1fr) 52px minmax(160px, 2fr) 54px 150px;
+    align-items: center; column-gap: 20px; padding: 13px 0; border-bottom: 1px solid var(--line);
+  }
+  .score-name { color: var(--ink); text-decoration: none; }
+  a.score-name:hover { text-decoration: underline; }
+  .score-number { font-family: var(--serif); font-size: 30px; line-height: 1; text-align: right; }
+  .track { position: relative; height: 8px; border-radius: 999px; background: #EFE8DC; }
+  .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--olive-deep); }
+  .fair .fill { background: var(--olive); }
+  .weak .fill { background: var(--coral); }
+  /* quiet notches at 60, 75 and 90: where "acceptable", "good" and "excellent" start */
+  .track::after {
+    content: ""; position: absolute; inset: 0;
+    background:
+      linear-gradient(90deg, transparent calc(60% - 1px), var(--cream) calc(60% - 1px), var(--cream) calc(60% + 1px), transparent calc(60% + 1px)),
+      linear-gradient(90deg, transparent calc(75% - 1px), var(--cream) calc(75% - 1px), var(--cream) calc(75% + 1px), transparent calc(75% + 1px)),
+      linear-gradient(90deg, transparent calc(90% - 1px), var(--cream) calc(90% - 1px), var(--cream) calc(90% + 1px), transparent calc(90% + 1px));
+  }
+  .before {
+    position: absolute; z-index: 1; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px;
+    border: 2px solid var(--ink); border-radius: 50%; background: var(--cream);
+  }
+  .change { font-weight: 600; font-size: 14px; text-align: right; white-space: nowrap; }
+  .change.down { color: #A8452B; }
+  .change.same { font-weight: 400; color: var(--muted); }
+  .source { color: var(--muted); font-size: 13px; }
+  .score.overall { padding: 20px 0; }
+  .score.overall .score-name { font-family: var(--serif); font-size: 26px; }
+  .score.overall .score-number { font-size: 46px; }
+  .score.overall .track { height: 12px; }
+  .legend { color: var(--muted); font-size: 13px; margin: 14px 0 0; max-width: 78ch; }
+  @media (max-width: 820px) {
+    .score { grid-template-columns: 1fr auto; row-gap: 8px; }
+    .score .track { grid-column: 1 / -1; }
+    .score .source { grid-column: 1; grid-row: 3; }
+    .score .change { grid-column: 2; grid-row: 3; }
+  }
+
+  /* Priorities: a real order, most valuable first, so they are numbered */
+  .priorities { list-style: none; counter-reset: priority; margin: 0; padding: 0; max-width: 820px; }
+  .priorities li {
+    counter-increment: priority; display: grid; grid-template-columns: 44px 1fr auto; column-gap: 14px;
+    align-items: start; padding: 20px 0; border-top: 1px solid var(--line);
+  }
+  .priorities li::before { content: counter(priority); font-family: var(--serif); font-size: 34px; line-height: 1; color: var(--olive-deep); }
+  .priorities h3 { font: 600 18px/1.35 var(--sans); margin: 2px 0 4px; }
+  .priorities p { margin: 0; color: var(--soft); max-width: 62ch; }
+  .effort { font-size: 13px; font-weight: 500; color: var(--olive-deep); background: var(--sage); border-radius: 999px; padding: 4px 13px; white-space: nowrap; margin-top: 3px; }
+  @media (max-width: 620px) {
+    .priorities li { grid-template-columns: 34px 1fr; }
+    .effort { grid-column: 2; justify-self: start; margin-top: 10px; }
+  }
+
+  /* Area by area */
+  .area { padding: 34px 0; border-top: 1px solid var(--line); }
+  .area-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .area h3 { font-family: var(--serif); font-weight: 400; font-size: 28px; letter-spacing: -0.01em; line-height: 1.2; margin: 0; }
+  .area-score { font-family: var(--serif); font-size: 28px; white-space: nowrap; }
+  .area-score small { font-family: var(--sans); font-size: 13px; color: var(--muted); margin-left: 6px; }
+  .area > p { margin: 10px 0 0; color: var(--soft); max-width: 68ch; }
+  .findings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 48px; margin-top: 22px; }
+  @media (max-width: 720px) { .findings { grid-template-columns: 1fr; } }
+  .findings h4 { font: 600 14px var(--sans); margin: 0 0 8px; }
+  .findings ul { list-style: none; margin: 0; padding: 0; }
+  .findings li { position: relative; padding: 0 0 9px 20px; color: var(--soft); }
+  .findings li::before { content: ""; position: absolute; left: 2px; top: 0.62em; width: 8px; height: 8px; border-radius: 50%; background: var(--olive-deep); }
+  .findings .fails li::before { background: var(--coral); }
+
+  /* Screenshots: a strip to scroll sideways; the numbers match "captura 3" in the text */
+  .shots { display: flex; gap: 18px; overflow-x: auto; padding: 4px 2px 18px; scroll-snap-type: x proximity; }
+  .shot { flex: 0 0 auto; margin: 0; scroll-snap-align: start; }
+  .shot a { display: block; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; }
+  .shot img { display: block; height: 420px; width: auto; max-width: 78vw; object-fit: cover; object-position: top; }
+  .shot figcaption { font-size: 13px; color: var(--muted); margin-top: 8px; max-width: 260px; }
+  .shot figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* Checks: the one sage block of the page */
+  .checks { background: var(--sage); border-radius: var(--radius); padding: 26px 28px; }
+  .checks ul { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 44px; }
+  @media (max-width: 760px) { .checks ul { columns: 1; } }
+  .checks li { break-inside: avoid; display: grid; grid-template-columns: 22px 1fr; column-gap: 8px; padding: 6px 0; }
+  .mark { font-weight: 600; color: var(--olive-deep); }
+  .no .mark { color: #A8452B; }
+  .skip .mark, .skip { color: var(--muted); }
+  .detail { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  .no .detail { color: var(--soft); }
+  .broken { margin: 22px 0 0; padding: 0; list-style: none; max-width: 78ch; }
+  .broken li { padding: 8px 0; border-top: 1px solid var(--line); color: var(--soft); overflow-wrap: anywhere; }
+
+  /* Tables */
+  table { border-collapse: collapse; width: 100%; max-width: 620px; }
+  th, td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 500; color: var(--muted); font-size: 14px; }
+  td.number, th.number { text-align: right; font-variant-numeric: tabular-nums; }
+  .google-number { font-family: var(--serif); font-size: 24px; line-height: 1; }
+  .plain { list-style: none; padding: 0; margin: 22px 0 0; max-width: 70ch; color: var(--soft); }
+  .plain li { padding: 3px 0; }
+  .ask-google h3 { font: 600 15px var(--sans); margin: 26px 0 6px; }
+  .ask-google ul { margin: 0; padding-left: 20px; color: var(--soft); max-width: 70ch; }
+  details { margin-top: 26px; }
+  summary {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    font-weight: 500; color: var(--olive-deep);
+    border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 8px 18px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "+"; font-size: 17px; line-height: 1; }
+  details[open] summary::before { content: "–"; }
+  .pages { max-width: none; margin-top: 18px; font-size: 14px; }
+  .pages td { overflow-wrap: anywhere; }
+  .scroll { overflow-x: auto; }
+
+  /* Questions for me */
+  .questions { background: var(--peach); border-radius: var(--radius); padding: 30px 28px; }
+  .questions .hand { font-family: var(--hand); font-size: 26px; color: var(--olive-deep); transform: rotate(-2deg); display: inline-block; margin-bottom: 8px; }
+  .questions ol { margin: 0; padding-left: 22px; color: var(--soft); max-width: 66ch; }
+  .questions li { padding: 4px 0; }
+
+  pre { white-space: pre-wrap; font: 14px/1.6 var(--sans); background: #F8F3EA; border-radius: 14px; padding: 20px; max-width: 78ch; }
+  .facts { color: var(--muted); font-size: 14px; margin-top: 84px; max-width: 78ch; }
+
+  /* Waiting and failing */
+  .waiting { padding: 96px 0 0; max-width: 640px; }
+  .waiting h1 em { font-style: italic; }
+  .progress { display: flex; align-items: center; gap: 12px; margin: 26px 0 0; font-size: 18px; }
+  .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--coral); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  .waiting .quiet-text { color: var(--muted); margin-top: 14px; }
+  .failure { background: var(--peach); border-left: 3px solid var(--coral); border-radius: 12px; padding: 16px 20px; margin-top: 26px; }
+
+  /* Decision bar: always within reach while reading. Approve is the one strong button. */
+  .decide { position: fixed; left: 0; right: 0; bottom: 0; background: var(--cream); border-top: 1px solid var(--line); }
+  .decide-inner { max-width: 1040px; margin: 0 auto; padding: 14px 28px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .decide input {
+    flex: 1 1 260px; font: inherit; color: var(--ink); background: #fff;
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+  }
+  .decide input::placeholder { color: #A39A90; }
+  .decided { color: var(--muted); margin: 0; }
+  button {
+    font: inherit; font-weight: 500; cursor: pointer; border-radius: 999px; padding: 10px 22px;
+    border: 1px solid var(--olive-deep); background: var(--olive-deep); color: var(--cream);
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  button:hover { background: #4E5435; border-color: #4E5435; }
+  button.quiet { background: transparent; color: var(--ink); border-color: rgba(43, 36, 32, 0.28); }
+  button.quiet:hover { border-color: var(--ink); background: transparent; }
+  button:disabled { opacity: 0.55; cursor: default; }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; animation: none !important; }
+  }
+  @media print {
+    .decide, .back { display: none; }
+    .shots { flex-wrap: wrap; overflow: visible; }
+    .shot img { height: 260px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <a class="back" href="/">Volver al panel</a>
+    <div class="wordmark">Atelier</div>
+  </div>
+
+  <!-- While the agent works, or if it could not finish -->
+  <div class="waiting" id="waiting" hidden>
+    <p class="whose" id="waiting-whose"></p>
+    <h1 id="waiting-title"></h1>
+    <p class="progress" id="progress-line"><span class="pulse"></span><span id="progress"></span></p>
+    <p class="quiet-text" id="waiting-hint"></p>
+    <div class="failure" id="failure" role="alert" hidden></div>
+  </div>
+
+  <!-- The report -->
+  <main id="report" hidden>
+    <header class="opening">
+      <p class="whose" id="whose"></p>
+      <h1 id="verdict"></h1>
+      <div class="notes" id="notes" hidden></div>
+    </header>
+
+    <section aria-labelledby="scores-title">
+      <h2 id="scores-title">Nota por área</h2>
+      <p class="intro" id="scores-intro"></p>
+      <ul class="scores" id="scores"></ul>
+      <p class="legend" id="legend"></p>
+    </section>
+
+    <section aria-labelledby="priorities-title" id="priorities-section">
+      <h2 id="priorities-title">Lo primero que cambiaría</h2>
+      <p class="intro">Mi propuesta para la web nueva, de lo que más vale a lo que menos.</p>
+      <ol class="priorities" id="priorities"></ol>
+    </section>
+
+    <section aria-labelledby="questions-title" id="questions-section">
+      <div class="questions">
+        <span class="hand">antes de seguir</span>
+        <h2 id="questions-title">Lo que necesito de ti</h2>
+        <ol id="questions"></ol>
+      </div>
+    </section>
+
+    <section aria-labelledby="shots-title" id="shots-section">
+      <h2 id="shots-title">Lo que vio el agente</h2>
+      <p class="intro">La web tal como se ve en ordenador y en móvil. Cuando el informe dice «captura 3», es la número 3 de aquí. Pulsa una para verla grande.</p>
+      <div class="shots" id="shots"></div>
+    </section>
+
+    <section aria-labelledby="areas-title" id="areas-section">
+      <h2 id="areas-title">Área por área</h2>
+      <div id="areas"></div>
+    </section>
+
+    <section aria-labelledby="raw-title" id="raw-section" hidden>
+      <h2 id="raw-title">La respuesta de Claude, tal cual</h2>
+      <pre id="raw"></pre>
+    </section>
+
+    <section aria-labelledby="checks-title">
+      <h2 id="checks-title">Comprobado, no supuesto</h2>
+      <p class="intro">Esto lo verifica el código abriendo cada página y cada enlace. Sale igual lo mire quien lo mire.</p>
+      <div class="checks"><ul id="checks"></ul></div>
+      <ul class="broken" id="broken"></ul>
+    </section>
+
+    <section aria-labelledby="google-title">
+      <h2 id="google-title">Medido por Google</h2>
+      <p class="intro" id="google-intro"></p>
+      <div id="google"></div>
+    </section>
+
+    <section aria-labelledby="pages-title">
+      <h2 id="pages-title">Páginas leídas</h2>
+      <p class="intro" id="pages-intro"></p>
+      <details>
+        <summary>Ver la lista de páginas</summary>
+        <div class="scroll"><table class="pages"><thead><tr><th>Página</th><th>Título</th><th class="number">Palabras</th><th class="number">Imágenes</th><th class="number">Respuesta</th></tr></thead><tbody id="pages"></tbody></table></div>
+      </details>
+    </section>
+
+    <p class="facts" id="facts"></p>
+  </main>
+</div>
+
+<div class="decide" id="decide" hidden>
+  <div class="decide-inner" id="decide-inner"></div>
+</div>
+
+<script>
+const reportId = Number(location.pathname.split("/").filter(Boolean).pop());
+const $ = (id) => document.getElementById(id);
+const EFFORT = { small: "Esfuerzo pequeño", medium: "Esfuerzo medio", large: "Esfuerzo grande" };
+const GOOGLE_ROWS = [["speed", "Velocidad"], ["accessibility", "Accesibilidad"], ["seo", "Google (SEO)"], ["best_practices", "Buenas prácticas"]];
+
+// Build elements with textContent only, so text coming from the agent or from a website is never run as HTML.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "Error " + response.status);
+  }
+  return response.json();
+}
+
+// The database keeps times in UTC ("2026-11-15 23:43:27"); show them in my own time zone.
+const asDate = (text) => new Date(text.replace(" ", "T") + "Z");
+const longDate = (text) => asDate(text).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+const shortDate = (text) => asDate(text).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+const dollars = (amount) => amount.toFixed(2).replace(".", ",") + " $";
+const level = (score) => (score >= 75 ? "good" : score >= 60 ? "fair" : "weak");
+const plural = (count, one, many) => count + " " + (count === 1 ? one : many);
+
+function scoreRow(name, score, before, source, link) {
+  const row = el("li", "score " + level(score));
+  const title = el(link ? "a" : "span", "score-name", name);
+  if (link) title.href = link;
+  const track = el("span", "track");
+  const fill = el("span", "fill");
+  fill.style.width = score + "%";
+  track.append(fill);
+  track.setAttribute("role", "img");
+  track.setAttribute("aria-label", score + " de 100" + (before === undefined ? "" : ", antes " + before));
+  const change = el("span", "change");
+  if (before !== undefined) {
+    const mark = el("span", "before");
+    mark.style.left = before + "%";
+    track.append(mark);
+    const difference = score - before;
+    change.textContent = difference === 0 ? "igual" : (difference > 0 ? "+" : "−") + Math.abs(difference);
+    if (difference < 0) change.classList.add("down");
+    if (difference === 0) change.classList.add("same");
+  }
+  row.append(title, el("span", "score-number", score), track, change, el("span", "source", source));
+  return row;
+}
+
+function renderScores(report) {
+  const data = report.data;
+  const before = report.previous ? report.previous.scores : {};
+  const rows = [];
+  if (data.overall_score !== null) {
+    const overall = scoreRow("Nota global", data.overall_score,
+      report.previous && report.previous.overall_score !== null ? report.previous.overall_score : undefined,
+      "media de las áreas");
+    overall.classList.add("overall");
+    rows.push(overall);
+  }
+  for (const area of data.areas) {
+    if (area.score === null) continue;
+    rows.push(scoreRow(area.title, area.score, before[area.key],
+      area.measured ? "medida por Google" : "nota del agente", "#area-" + area.key));
+  }
+  $("scores").replaceChildren(...rows);
+  $("scores-intro").textContent = report.previous
+    ? "De 0 a 100. El aro marca la nota del análisis anterior, del " + shortDate(report.previous.created_at) + "."
+    : "De 0 a 100. Es el primer análisis de esta web: el siguiente se comparará con este.";
+  $("legend").replaceChildren("Las rayas de la regla están en 60, 75 y 90: aceptable, bien y excelente. Por debajo de 60 hay problemas serios. "
+    + "Las notas medidas por Google no cambian según quién mire; las del agente son su criterio y pueden bailar unos puntos.");
+}
+
+function renderPriorities(data) {
+  $("priorities-section").hidden = !data.priorities.length;
+  $("priorities").replaceChildren(...data.priorities.map((priority) => {
+    const item = el("li");
+    const text = el("div");
+    text.append(el("h3", "", priority.title), el("p", "", priority.why));
+    item.append(text);
+    if (EFFORT[priority.effort]) item.append(el("span", "effort", EFFORT[priority.effort]));
+    return item;
+  }));
+}
+
+function findings(title, className, points) {
+  const block = el("div", className);
+  const list = el("ul");
+  list.append(...points.map((point) => el("li", "", point)));
+  block.append(el("h4", "", title), list);
+  return block;
+}
+
+function renderAreas(data) {
+  const written = data.areas.filter((area) => area.summary || area.works.length || area.fails.length);
+  $("areas-section").hidden = !written.length;
+  $("areas").replaceChildren(...written.map((area) => {
+    const block = el("article", "area");
+    block.id = "area-" + area.key;
+    const head = el("div", "area-head");
+    head.append(el("h3", "", area.title));
+    if (area.score !== null) {
+      const score = el("span", "area-score", area.score);
+      score.append(el("small", "", area.measured ? "medida por Google" : "nota del agente"));
+      head.append(score);
+    }
+    block.append(head);
+    if (area.summary) block.append(el("p", "", area.summary));
+    const lists = el("div", "findings");
+    if (area.fails.length) lists.append(findings("Lo que falla", "fails", area.fails));
+    if (area.works.length) lists.append(findings("Lo que funciona", "works", area.works));
+    block.append(lists);
+    return block;
+  }));
+}
+
+function renderShots(data) {
+  $("shots-section").hidden = !data.shots.length;
+  $("shots").replaceChildren(...data.shots.map((shot) => {
+    const figure = el("figure", "shot");
+    const link = el("a");
+    link.href = "/api/reports/" + reportId + "/shots/" + shot.file;
+    link.target = "_blank";
+    link.rel = "noopener";
+    const image = el("img");
+    image.src = link.href;
+    image.loading = "lazy";
+    image.alt = "Captura " + shot.number + ": " + shot.label;
+    image.width = shot.width;
+    image.height = shot.height;
+    link.append(image);
+    const caption = el("figcaption");
+    caption.append(el("b", "", "Captura " + shot.number), ". " + shot.label);
+    figure.append(link, caption);
+    return figure;
+  }));
+}
+
+function renderChecks(data) {
+  const order = (check) => (check.ok === false ? 0 : check.ok === true ? 1 : 2);
+  const checks = [...data.checks].sort((a, b) => order(a) - order(b));
+  $("checks").replaceChildren(...checks.map((check) => {
+    const item = el("li", check.ok === false ? "no" : check.ok === true ? "yes" : "skip");
+    const mark = el("span", "mark", check.ok === false ? "✗" : check.ok === true ? "✓" : "–");
+    mark.setAttribute("aria-label", check.ok === false ? "No" : check.ok === true ? "Sí" : "No aplica");
+    const text = el("span", "", check.label);
+    if (check.detail) text.append(el("span", "detail", check.detail));
+    item.append(mark, text);
+    return item;
+  }));
+  const where = (entry) => " Está en " + (entry.from === "/" ? "la portada" : entry.from)
+    + (entry.pages > 1 ? " y en " + plural(entry.pages - 1, "página más", "páginas más") : "") + ".";
+  const lines = [
+    ...data.broken_links.map((entry) => "Enlace roto: «" + (entry.text || "sin texto") + "» lleva a " + entry.to
+      + (entry.status ? " (error " + entry.status + ")." : " (no responde).") + where(entry)),
+    ...data.dead_anchors.map((entry) => "Sección que no existe: «" + (entry.text || "sin texto") + "» apunta a " + entry.to + "." + where(entry)),
+  ];
+  if (data.unclear_links) {
+    lines.push(plural(data.unclear_links, "enlace a otra web no se pudo comprobar", "enlaces a otras webs no se pudieron comprobar")
+      + ": algunas webs no responden a programas. No cuentan como rotos.");
+  }
+  $("broken").replaceChildren(...lines.map((line) => el("li", "", line)));
+}
+
+function renderGoogle(data) {
+  const mobile = data.pagespeed.mobile, desktop = data.pagespeed.desktop;
+  const holder = $("google");
+  if (!mobile.ok && !desktop.ok) {
+    $("google-intro").textContent = "Google PageSpeed es la prueba oficial de Google: carga la portada en sus ordenadores y le pone nota.";
+    holder.replaceChildren(el("div", "failure", "Esta vez no hay medida. " + (mobile.error || desktop.error || "")));
+    return;
+  }
+  $("google-intro").textContent = "Google PageSpeed es la prueba oficial de Google: carga la portada en sus ordenadores y le pone nota de 0 a 100. "
+    + "En móvil simula un teléfono normal con conexión lenta, por eso suele salir más bajo.";
+  const table = el("table");
+  const head = el("tr");
+  head.append(el("th", "", ""), el("th", "number", "Móvil"), el("th", "number", "Ordenador"));
+  const body = el("tbody");
+  const cell = (result, key) => {
+    const td = el("td", "number");
+    td.append(el("span", "google-number", result.ok && result.scores[key] !== null ? result.scores[key] : "–"));
+    return td;
+  };
+  for (const [key, label] of GOOGLE_ROWS) {
+    const row = el("tr");
+    row.append(el("td", "", label), cell(mobile, key), cell(desktop, key));
+    body.append(row);
+  }
+  const thead = el("thead");
+  thead.append(head);
+  table.append(thead, body);
+  const parts = [table];
+  const measured = mobile.ok ? mobile : desktop;
+  const metrics = measured.metrics;
+  const plain = el("ul", "plain");
+  const lines = [
+    metrics.first_content && "Lo primero aparece en pantalla a los " + metrics.first_content + ".",
+    metrics.main_content && "Lo principal (la foto o el titular grande) aparece a los " + metrics.main_content + ". Lo bueno es menos de 2,5 s.",
+    metrics.blocked_time && "La página se queda sin responder " + metrics.blocked_time + " mientras carga.",
+    metrics.layout_shift && "Saltos de la página al cargar: " + metrics.layout_shift + ". Lo bueno es menos de 0,1.",
+  ].filter(Boolean);
+  plain.append(el("li", "", mobile.ok ? "En móvil:" : "En ordenador:"), ...lines.map((line) => el("li", "", line)));
+  parts.push(plain);
+  const asks = el("div", "ask-google");
+  for (const [key, label] of GOOGLE_ROWS) {
+    const problems = measured.problems[key] || [];
+    if (!problems.length) continue;
+    const list = el("ul");
+    list.append(...problems.map((problem) => el("li", "", problem)));
+    asks.append(el("h3", "", "Lo que Google pide arreglar en " + label.toLowerCase().replace("google (seo)", "SEO")), list);
+  }
+  parts.push(asks);
+  holder.replaceChildren(...parts);
+}
+
+function renderPages(data) {
+  const stats = data.stats;
+  $("pages-intro").textContent = "El agente leyó " + plural(stats.pages_read, "página", "páginas")
+    + (data.unread_pages.length ? " y dejó " + data.unread_pages.length + " sin leer por el límite: " + data.unread_pages.slice(0, 8).join(", ") + "." : ". No quedó ninguna sin leer.");
+  $("pages").replaceChildren(...data.pages.map((page) => {
+    const row = el("tr");
+    row.append(el("td", "", page.path), el("td", "", page.title || "(sin título)"),
+      el("td", "number", page.words), el("td", "number", page.images), el("td", "number", page.status || "falló"));
+    return row;
+  }));
+}
+
+function renderDecision(report) {
+  const bar = $("decide-inner");
+  const task = report.task;
+  $("decide").hidden = !task;
+  if (!task) return;
+  if (task.status !== "pending") {
+    const word = task.status === "approved" ? "Aprobaste" : "Rechazaste";
+    bar.replaceChildren(el("p", "decided", word + " este informe el " + (task.decided_at ? longDate(task.decided_at) : "")
+      + "." + (task.feedback ? " Tu nota: " + task.feedback : "")));
+    return;
+  }
+  const note = el("input");
+  note.placeholder = "Nota para el agente (opcional)";
+  note.maxLength = 2000;
+  note.setAttribute("aria-label", "Nota para el agente");
+  const approve = el("button", "", "Aprobar");
+  const reject = el("button", "quiet", "Rechazar");
+  const decide = async (action) => {
+    approve.disabled = reject.disabled = true;
+    try {
+      await api("/api/tasks/" + task.id + "/" + action, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feedback: note.value }),
+      });
+      load();
+    } catch (error) {
+      bar.append(el("p", "decided", error.message));
+      approve.disabled = reject.disabled = false;
+    }
+  };
+  approve.onclick = () => decide("approve");
+  reject.onclick = () => decide("reject");
+  bar.replaceChildren(note, approve, reject);
+}
+
+function renderReport(report) {
+  const data = report.data;
+  document.title = report.client_name + ": informe de la web | Atelier";
+  const whose = $("whose");
+  const site = el("a", "", data.website.replace(/^https?:\/\//i, "").replace(/\/$/, ""));
+  if (/^https?:\/\//i.test(data.website)) { site.href = data.website; site.target = "_blank"; site.rel = "noopener noreferrer"; }
+  whose.replaceChildren("Análisis de la web de " + report.client_name + ", ", site, ". " + longDate(report.created_at) + ".");
+  $("verdict").textContent = data.one_line || "El informe está listo.";
+  $("notes").hidden = !data.notes.length;
+  $("notes").replaceChildren(...data.notes.map((note) => el("p", "", note)));
+
+  renderScores(report);
+  renderPriorities(data);
+  $("questions-section").hidden = !data.questions.length;
+  $("questions").replaceChildren(...data.questions.map((question) => el("li", "", question)));
+  renderShots(data);
+  renderAreas(data);
+  $("raw-section").hidden = !data.raw_answer;
+  $("raw").textContent = data.raw_answer || "";
+  renderChecks(data);
+  renderGoogle(data);
+  renderPages(data);
+  const stats = data.stats;
+  const time = stats.seconds >= 90 ? Math.round(stats.seconds / 60) + " minutos" : stats.seconds + " segundos";
+  $("facts").textContent = "Este análisis leyó " + plural(stats.pages_read, "página", "páginas") + ", comprobó "
+    + plural(stats.links_checked, "enlace", "enlaces") + " e hizo " + plural(stats.shots, "captura", "capturas")
+    + " en " + time + ". Costó " + dollars(report.cost_usd) + " de API (" + stats.model + ").";
+  renderDecision(report);
+}
+
+async function load() {
+  let report;
+  try {
+    report = await api("/api/reports/" + reportId);
+  } catch (error) {
+    $("waiting").hidden = false;
+    $("waiting-title").textContent = "No encuentro este informe.";
+    $("progress-line").hidden = true;
+    $("failure").hidden = false;
+    $("failure").textContent = error.message;
+    return;
+  }
+  const done = report.status === "done";
+  $("report").hidden = !done;
+  $("waiting").hidden = done;
+  if (done) return renderReport(report);
+
+  $("waiting-whose").textContent = "Análisis de la web de " + report.client_name;
+  const failed = report.status === "failed";
+  $("waiting-title").textContent = failed ? "El análisis no terminó." : "El agente está mirando la web.";
+  $("progress-line").hidden = failed;
+  $("progress").textContent = report.progress;
+  $("waiting-hint").textContent = failed
+    ? "No se ha guardado ningún informe. Vuelve al panel y pulsa «Analizar web» otra vez cuando esté arreglado."
+    : "Tarda unos minutos. Puedes cerrar esta página: el informe aparecerá en el panel, en «Para aprobar».";
+  $("failure").hidden = !failed;
+  $("failure").textContent = report.error;
+  if (!failed) setTimeout(load, 2500);
+}
+
+load();
+</script>
+</body>
+</html>

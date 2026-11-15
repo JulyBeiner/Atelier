@@ -89,6 +89,11 @@
     letter-spacing: -0.01em; margin: 14px 0 6px;
   }
   .card p { margin: 0; color: #4A413A; white-space: pre-wrap; max-width: 62ch; }
+  .read-report {
+    display: inline-block; margin-top: 16px; font-weight: 500; text-decoration: none;
+    border: 1px solid rgba(94, 100, 64, 0.45); border-radius: 999px; padding: 8px 18px;
+  }
+  .read-report:hover { border-color: var(--olive-deep); }
   .actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; align-items: center; }
   .actions input { flex: 1 1 260px; border-color: transparent; }
 
@@ -132,7 +137,7 @@
   .feedback { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
   .clients li {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 6px 12px; flex-wrap: wrap;
     padding: 14px 0; border-top: 1px solid var(--line); font-size: 16px;
   }
   a { color: var(--olive-deep); text-underline-offset: 3px; text-decoration-thickness: 1px; }
@@ -140,6 +145,12 @@
   .clients .side { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
   button.small { padding: 5px 14px; font-size: 13px; }
   .hint { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+  /* While the Web agent works on a client: what it is doing right now */
+  .working { flex: 1 0 100%; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+  .working::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--coral); animation: working 1.6s ease-in-out infinite; }
+  @keyframes working { 50% { opacity: 0.25; } }
+  .client-note { flex: 1 0 100%; font-size: 13px; color: #4A413A; background: var(--peach); border-radius: 10px; padding: 8px 12px; }
+  .feed .report-link { font-size: 13px; }
 
   /* Forms live inside quiet disclosures: they are secondary to approving. */
   details { margin-top: 22px; }
@@ -174,7 +185,7 @@
     background: var(--peach); color: var(--ink); border-left: 3px solid var(--coral);
   }
 
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
@@ -211,7 +222,8 @@
     <section aria-labelledby="clients-title">
       <h2 id="clients-title">Clientes</h2>
       <ul class="clients" id="clients"></ul>
-      <p class="hint">"Analizar web" pone a trabajar al agente de Web. Cada análisis cuesta unos céntimos de API.</p>
+      <p class="hint">«Analizar web» pone a trabajar al agente de Web: lee toda la web, la mira en ordenador y en móvil y la mide con Google. Tarda unos minutos y cuesta entre 15 y 30 céntimos de API.</p>
+      <p class="hint" id="agent-missing"></p>
       <details>
         <summary>Añadir cliente</summary>
         <form id="client-form">
@@ -317,6 +329,7 @@ function pendingCard(task) {
   meta.append(el("span", "tag", DEPARTMENTS[task.department] || task.department), el("span", "", task.client_name));
   card.append(meta, el("h3", "", task.title));
   if (task.description) card.append(el("p", "", task.description));
+  if (task.report_id) card.append(reportLink(task.report_id, "Leer el informe", "read-report"));
 
   const actions = el("div", "actions");
   const note = el("input");
@@ -336,6 +349,12 @@ function pendingCard(task) {
   return card;
 }
 
+function reportLink(reportId, text, className) {
+  const link = el("a", className, text);
+  link.href = "/reports/" + reportId;
+  return link;
+}
+
 function emptyPending() {
   const block = el("div", "empty-block");
   block.append(el("span", "note", "nada pendiente"), el("p", "", "Cuando un agente necesite tu decisión, aparecerá aquí."));
@@ -351,6 +370,7 @@ function feedItem(task) {
   );
   item.append(meta, el("div", "title", task.title));
   if (task.feedback) item.append(el("div", "feedback", "Tu nota: " + task.feedback));
+  if (task.report_id) item.append(reportLink(task.report_id, "Ver el informe", "report-link"));
   return item;
 }
 
@@ -362,26 +382,68 @@ async function decide(taskId, action, feedback) {
 }
 
 const dollars = (amount) => amount.toFixed(2).replace(".", ",") + " $";
-let analyzing = false;
+let watching = null;   // the timer that follows an analysis while it runs
+let wasRunning = null; // id of the analysis that was running at the last look
 
-// Ask the Web agent to review a client's website. Each run uses the Claude API.
+// Ask the Web agent to review a client's website. It works in the background and uses the Claude API.
 async function analyzeClient(clientId, button) {
-  analyzing = true;
   button.disabled = true;
-  button.textContent = "Analizando…";
-  let failure = "";
   try {
     await post("/api/clients/" + clientId + "/analyze");
-  } catch (error) { failure = error.message; }
-  analyzing = false;
-  await refresh();
-  if (failure) showError(failure);
-  else window.scrollTo({ top: 0, behavior: "smooth" });
+    await refresh();
+  } catch (error) {
+    showError(error.message);
+    button.disabled = false;
+  }
+}
+
+// One line per client: name, last score, website, and the button or what the agent is doing right now.
+function clientItem(client, reports, running) {
+  const item = el("li");
+  item.append(el("span", "", client.name));
+  const side = el("span", "side");
+  const mine = reports.filter((report) => report.client_id === client.id);  // newest first
+  const working = running && running.client_id === client.id;
+  const lastDone = mine.find((report) => report.status === "done" && report.overall_score !== null);
+  if (lastDone) side.append(reportLink(lastDone.id, lastDone.overall_score + " de 100", ""));
+  if (/^https?:\/\//i.test(client.website)) {
+    const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
+    link.href = client.website;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    side.append(link);
+    if (!working) {
+      const analyze = el("button", "quiet small", "Analizar web");
+      analyze.disabled = Boolean(running);  // one analysis at a time
+      analyze.onclick = () => analyzeClient(client.id, analyze);
+      side.append(analyze);
+    }
+  }
+  item.append(side);
+  if (working) {
+    item.append(el("div", "working", running.progress || "Trabajando…"));
+  } else if (mine.length && mine[0].status === "failed") {
+    item.append(el("div", "client-note", "El último análisis no terminó. " + mine[0].error));
+  }
+  return item;
+}
+
+// Tell me, once, what the Web agent is missing to do a complete analysis.
+async function checkAgent() {
+  try {
+    const ready = await api("/api/agent/check");
+    const missing = [];
+    if (!ready.api_key) missing.push("Sin clave de la API de Claude en .env, el agente no puede escribir informes.");
+    if (!ready.screenshots) missing.push("Sin capturas: " + ready.screenshots_detail);
+    if (!ready.pagespeed_key) missing.push("Sin clave gratuita de Google PageSpeed en .env, Google suele negarse a medir.");
+    $("agent-missing").textContent = missing.join(" ");
+  } catch (error) { /* the panel works the same without this line */ }
 }
 
 async function refresh() {
   try {
-    const [clients, tasks, usage] = await Promise.all([api("/api/clients"), api("/api/tasks"), api("/api/usage")]);
+    const [clients, tasks, usage, reports] = await Promise.all(
+      [api("/api/clients"), api("/api/tasks"), api("/api/usage"), api("/api/reports")]);
     showError("");
     $("usage-spent").textContent = dollars(usage.spent_usd);
     $("usage-budget").textContent = "de " + dollars(usage.budget_usd) + " en API";
@@ -404,24 +466,14 @@ async function refresh() {
       ...(history.length ? history.map(feedItem) : [el("li", "empty", "Todavía no hay actividad.")])
     );
 
-    if (!analyzing) {
-      $("clients").replaceChildren(...clients.map((client) => {
-        const item = el("li");
-        item.append(el("span", "", client.name));
-        if (/^https?:\/\//i.test(client.website)) {
-          const side = el("span", "side");
-          const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
-          link.href = client.website;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          const analyze = el("button", "quiet small", "Analizar web");
-          analyze.onclick = () => analyzeClient(client.id, analyze);
-          side.append(link, analyze);
-          item.append(side);
-        }
-        return item;
-      }));
-    }
+    // While the agent works, look again every few seconds; when it finishes, go up to see the result.
+    const running = reports.find((report) => report.status === "running");
+    $("clients").replaceChildren(...clients.map((client) => clientItem(client, reports, running)));
+    clearTimeout(watching);
+    if (running) watching = setTimeout(refresh, 3000);
+    const finished = wasRunning && !running && reports.find((report) => report.id === wasRunning);
+    if (finished && finished.status === "done") window.scrollTo({ top: 0, behavior: "smooth" });
+    wasRunning = running ? running.id : null;
 
     const selected = $("task-client").value;
     $("task-client").replaceChildren(...clients.map((client) => {
@@ -461,6 +513,7 @@ $("task-form").addEventListener("submit", async (event) => {
 
 refresh();
 setInterval(refresh, 15000);
+checkAgent();
 </script>
 </body>
 </html>

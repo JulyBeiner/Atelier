@@ -27,6 +27,24 @@ CREATE TABLE IF NOT EXISTS tasks (
     decided_at TEXT
 );
 
+-- One row per in-depth website analysis. The full report is JSON in "data";
+-- "scores" repeats the score of each area so two analyses are easy to compare.
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    task_id INTEGER REFERENCES tasks(id),
+    website TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'running',
+    progress TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    overall_score INTEGER,
+    scores TEXT NOT NULL DEFAULT '{}',
+    data TEXT NOT NULL DEFAULT '{}',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS api_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent TEXT NOT NULL,

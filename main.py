@@ -1,5 +1,7 @@
 """Atelier control panel: clients, tasks from the agents, and my approvals."""
 
+import json
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -9,7 +11,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from database import get_connection, init_db
-from web_agent import analyze_client, usage_summary
+from web_agent import REPORTS_DIR, readiness, recover_interrupted, start_analysis, usage_summary
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -21,6 +23,7 @@ Status = Literal["pending", "approved", "rejected", "done"]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    recover_interrupted()
     yield
 
 
@@ -45,10 +48,23 @@ class Decision(BaseModel):
     feedback: str = Field(default="", max_length=2000)
 
 
+# report_id is set when the task is a website analysis: the panel then links to the full report.
 TASK_QUERY = """
-SELECT tasks.*, clients.name AS client_name
+SELECT tasks.*, clients.name AS client_name, reports.id AS report_id
 FROM tasks JOIN clients ON clients.id = tasks.client_id
+LEFT JOIN reports ON reports.task_id = tasks.id
 """
+
+# An analysis without the long report inside: enough for lists and for comparing scores.
+REPORT_QUERY = """
+SELECT reports.id, reports.client_id, clients.name AS client_name, reports.task_id, reports.website,
+       reports.status, reports.progress, reports.error, reports.overall_score, reports.scores,
+       reports.cost_usd, reports.created_at, reports.finished_at
+FROM reports JOIN clients ON clients.id = reports.client_id
+"""
+
+# The only file names the Web agent gives its screenshots.
+SHOT_NAME = re.compile(r"p\d{1,2}-(desktop|mobile)-(top|\d)\.jpg")
 
 
 def fetch_task(connection, task_id: int) -> dict:
@@ -58,9 +74,21 @@ def fetch_task(connection, task_id: int) -> dict:
     return dict(row)
 
 
+def report_summary(row) -> dict:
+    summary = dict(row)
+    summary["scores"] = json.loads(summary["scores"])
+    return summary
+
+
 @app.get("/", include_in_schema=False)
 def panel():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/reports/{report_id}", include_in_schema=False)
+def report_page(report_id: int):
+    """The page for reading one analysis comfortably. It loads its data from /api/reports/{id}."""
+    return FileResponse(STATIC_DIR / "report.html")
 
 
 @app.get("/api/clients")
@@ -90,12 +118,58 @@ def create_client(new_client: ClientCreate):
     return dict(row)
 
 
-@app.post("/api/clients/{client_id}/analyze", status_code=201)
+@app.post("/api/clients/{client_id}/analyze", status_code=202)
 def analyze_client_website(client_id: int):
-    """Run the Web agent on this client. It uses the Claude API, so it costs money."""
-    task_id = analyze_client(client_id)
+    """Start the Web agent on this client. It uses the Claude API, so it costs money.
+
+    The analysis takes a few minutes and runs in the background:
+    the answer comes back at once with the id of the report to watch.
+    """
+    return {"report_id": start_analysis(client_id)}
+
+
+@app.get("/api/reports")
+def list_reports(client_id: int | None = None):
+    """Every analysis, newest first."""
+    where, values = (" WHERE reports.client_id = ?", [client_id]) if client_id is not None else ("", [])
     with get_connection() as connection:
-        return fetch_task(connection, task_id)
+        rows = connection.execute(REPORT_QUERY + where + " ORDER BY reports.id DESC", values).fetchall()
+    return [report_summary(row) for row in rows]
+
+
+@app.get("/api/reports/{report_id}")
+def get_report(report_id: int):
+    """One analysis: its full report, the task waiting for my decision, and the analysis before it."""
+    with get_connection() as connection:
+        row = connection.execute(REPORT_QUERY + " WHERE reports.id = ?", (report_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Report not found")
+        data = connection.execute("SELECT data FROM reports WHERE id = ?", (report_id,)).fetchone()["data"]
+        previous = connection.execute(
+            REPORT_QUERY + " WHERE reports.client_id = ? AND reports.status = 'done' AND reports.id < ?"
+            " ORDER BY reports.id DESC LIMIT 1", (row["client_id"], report_id),
+        ).fetchone()
+        task = fetch_task(connection, row["task_id"]) if row["task_id"] else None
+    return report_summary(row) | {
+        "data": json.loads(data),
+        "task": task,
+        "previous": report_summary(previous) if previous else None,
+    }
+
+
+@app.get("/api/reports/{report_id}/shots/{name}")
+def report_shot(report_id: int, name: str):
+    """One screenshot of an analysis."""
+    path = REPORTS_DIR / str(report_id) / name
+    if not SHOT_NAME.fullmatch(name) or not path.is_file():
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/agent/check")
+def agent_check():
+    """What the Web agent has ready and what it is missing (keys, browser for screenshots)."""
+    return readiness()
 
 
 @app.get("/api/usage")
