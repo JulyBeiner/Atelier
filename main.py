@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from database import get_connection, init_db
+from web_agent import analyze_client, usage_summary
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -87,6 +88,20 @@ def create_client(new_client: ClientCreate):
         )
         row = connection.execute("SELECT * FROM clients WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return dict(row)
+
+
+@app.post("/api/clients/{client_id}/analyze", status_code=201)
+def analyze_client_website(client_id: int):
+    """Run the Web agent on this client. It uses the Claude API, so it costs money."""
+    task_id = analyze_client(client_id)
+    with get_connection() as connection:
+        return fetch_task(connection, task_id)
+
+
+@app.get("/api/usage")
+def api_usage():
+    """How much the agents have spent on the Claude API, and the budget."""
+    return usage_summary()
 
 
 @app.get("/api/tasks")

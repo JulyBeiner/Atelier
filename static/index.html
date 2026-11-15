@@ -137,6 +137,9 @@
   }
   a { color: var(--olive-deep); text-underline-offset: 3px; text-decoration-thickness: 1px; }
   .clients a { font-size: 14px; }
+  .clients .side { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  button.small { padding: 5px 14px; font-size: 13px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
 
   /* Forms live inside quiet disclosures: they are secondary to approving. */
   details { margin-top: 22px; }
@@ -189,6 +192,7 @@
       <span class="stat"><b id="count-pending">0</b> para aprobar</span>
       <span class="stat"><b id="count-done">0</b> hechas</span>
       <span class="stat"><b id="count-clients">0</b> clientes</span>
+      <span class="stat" title="Gasto de los agentes en la API de Claude"><b id="usage-spent">0,00 $</b> <span id="usage-budget">de API</span></span>
     </div>
     <div id="error" role="alert"></div>
   </header>
@@ -207,6 +211,7 @@
     <section aria-labelledby="clients-title">
       <h2 id="clients-title">Clientes</h2>
       <ul class="clients" id="clients"></ul>
+      <p class="hint">"Analizar web" pone a trabajar al agente de Web. Cada análisis cuesta unos céntimos de API.</p>
       <details>
         <summary>Añadir cliente</summary>
         <form id="client-form">
@@ -356,10 +361,30 @@ async function decide(taskId, action, feedback) {
   await refresh();
 }
 
+const dollars = (amount) => amount.toFixed(2).replace(".", ",") + " $";
+let analyzing = false;
+
+// Ask the Web agent to review a client's website. Each run uses the Claude API.
+async function analyzeClient(clientId, button) {
+  analyzing = true;
+  button.disabled = true;
+  button.textContent = "Analizando…";
+  let failure = "";
+  try {
+    await post("/api/clients/" + clientId + "/analyze");
+  } catch (error) { failure = error.message; }
+  analyzing = false;
+  await refresh();
+  if (failure) showError(failure);
+  else window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 async function refresh() {
   try {
-    const [clients, tasks] = await Promise.all([api("/api/clients"), api("/api/tasks")]);
+    const [clients, tasks, usage] = await Promise.all([api("/api/clients"), api("/api/tasks"), api("/api/usage")]);
     showError("");
+    $("usage-spent").textContent = dollars(usage.spent_usd);
+    $("usage-budget").textContent = "de " + dollars(usage.budget_usd) + " en API";
 
     const pending = tasks.filter((task) => task.status === "pending");
     const history = tasks.filter((task) => task.status !== "pending");
@@ -379,18 +404,24 @@ async function refresh() {
       ...(history.length ? history.map(feedItem) : [el("li", "empty", "Todavía no hay actividad.")])
     );
 
-    $("clients").replaceChildren(...clients.map((client) => {
-      const item = el("li");
-      item.append(el("span", "", client.name));
-      if (/^https?:\/\//i.test(client.website)) {
-        const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
-        link.href = client.website;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        item.append(link);
-      }
-      return item;
-    }));
+    if (!analyzing) {
+      $("clients").replaceChildren(...clients.map((client) => {
+        const item = el("li");
+        item.append(el("span", "", client.name));
+        if (/^https?:\/\//i.test(client.website)) {
+          const side = el("span", "side");
+          const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
+          link.href = client.website;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          const analyze = el("button", "quiet small", "Analizar web");
+          analyze.onclick = () => analyzeClient(client.id, analyze);
+          side.append(link, analyze);
+          item.append(side);
+        }
+        return item;
+      }));
+    }
 
     const selected = $("task-client").value;
     $("task-client").replaceChildren(...clients.map((client) => {
