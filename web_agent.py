@@ -23,7 +23,8 @@ BUDGET_USD = 5.00
 # USD per million tokens for MODEL. Update both if the model changes.
 INPUT_PRICE = 2.00
 OUTPUT_PRICE = 10.00
-MAX_OUTPUT_TOKENS = 1500
+# The model may think before answering, and that thinking counts toward this limit.
+MAX_OUTPUT_TOKENS = 8000
 MAX_PAGE_BYTES = 600_000
 MAX_TEXT_CHARS = 12_000
 
@@ -40,6 +41,7 @@ Write for July, who decides what happens next. Rules:
 - Only say what you can support with the data you received. You cannot see the visual design,
   the images or the colors, so do not judge them; say so in one line where it matters.
 - Be concrete: quote the real headline or text you are talking about.
+- Be brief: one or two sentences per point, about 450 words in total. Always finish all five sections.
 
 Sections, in this order:
 EN UNA FRASE
@@ -247,6 +249,8 @@ def ask_claude(page_report: str, client_name: str, notes: str) -> str:
     answer = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text").strip()
     if not answer:
         raise HTTPException(status_code=502, detail="La API de Claude devolvió una respuesta vacía.")
+    if data.get("stop_reason") == "max_tokens":
+        answer += "\n\n(Aviso: el análisis se cortó por longitud. Pulsa Rechazar y vuelve a analizar.)"
     return answer
 
 
