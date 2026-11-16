@@ -379,22 +379,27 @@ def ask_claude(content: list[dict], shots: list[dict]) -> tuple[dict | None, str
         raise AgentError(f"Tope de la API alcanzado: {spent:.2f} $ de {BUDGET_USD:.2f} $. "
                          "El agente se para hasta que tú lo subas.")
 
+    def error_message(reply: httpx.Response) -> str:
+        try:
+            return reply.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            return reply.text[:300]
+
     response = post_to_claude(api_key, content, structured=True)
+    refused = ""
     if response.status_code == 400:
         # A refused request is free. Ask again the plain way: the instructions already describe the JSON.
+        refused = error_message(response)[:300]
         response = post_to_claude(api_key, content, structured=False)
     if response.status_code != 200:
-        try:
-            message = response.json()["error"]["message"]
-        except (ValueError, KeyError, TypeError):
-            message = response.text[:300]
-        raise AgentError(f"La API de Claude respondió con un error ({response.status_code}): {message}")
+        raise AgentError(f"La API de Claude respondió con un error ({response.status_code}): {error_message(response)}")
 
     data = response.json()
     usage = data.get("usage", {})
     used = {"input_tokens": usage.get("input_tokens", 0), "output_tokens": usage.get("output_tokens", 0)}
     used["cost_usd"] = cost_usd(used["input_tokens"], used["output_tokens"])
     used["cut_short"] = data.get("stop_reason") == "max_tokens"
+    used["structured_refused"] = refused  # empty when the API accepted REPORT_SCHEMA
     with get_connection() as connection:
         connection.execute(
             "INSERT INTO api_usage (agent, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?)",
@@ -408,8 +413,15 @@ def ask_claude(content: list[dict], shots: list[dict]) -> tuple[dict | None, str
     return parse_report(answer), answer, used
 
 
+def as_text(item) -> str:
+    """The model sometimes wraps a sentence in an object, like {"question": "..."}: take the sentence out."""
+    if isinstance(item, dict):
+        item = next((value for value in item.values() if isinstance(value, str)), "")
+    return str(item).strip()
+
+
 def clean_list(value, limit: int) -> list[str]:
-    return [str(item).strip() for item in value if str(item).strip()][:limit] if isinstance(value, list) else []
+    return [text for text in map(as_text, value) if text][:limit] if isinstance(value, list) else []
 
 
 def finish_areas(raw: dict, speed: dict) -> list[dict]:

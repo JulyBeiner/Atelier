@@ -145,9 +145,12 @@ def get_report(report_id: int):
         if row is None:
             raise HTTPException(status_code=404, detail="Report not found")
         data = connection.execute("SELECT data FROM reports WHERE id = ?", (report_id,)).fetchone()["data"]
+        # The analysis before this one, to compare scores. One that I rejected does not count.
         previous = connection.execute(
-            REPORT_QUERY + " WHERE reports.client_id = ? AND reports.status = 'done' AND reports.id < ?"
-            " ORDER BY reports.id DESC LIMIT 1", (row["client_id"], report_id),
+            REPORT_QUERY + " LEFT JOIN tasks ON tasks.id = reports.task_id"
+            " WHERE reports.client_id = ? AND reports.status = 'done' AND reports.id < ?"
+            " AND COALESCE(tasks.status, '') != 'rejected' ORDER BY reports.id DESC LIMIT 1",
+            (row["client_id"], report_id),
         ).fetchone()
         task = fetch_task(connection, row["task_id"]) if row["task_id"] else None
     return report_summary(row) | {

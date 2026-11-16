@@ -234,7 +234,9 @@ class PageReader(HTMLParser):
         alt = attributes.get("alt", "").strip()
         self.images.append({
             "src": attributes.get("src") or attributes.get("data-src", ""),
-            "has_alt": bool(alt),
+            # alt="" is right for a decorative image (a thumbnail inside a labelled button, an ornament).
+            # Only an image with no alt attribute at all leaves a screen reader guessing.
+            "has_alt": "alt" in attributes,
             "lazy": attributes.get("loading", "").lower() == "lazy",
             "sized": bool(attributes.get("width") and attributes.get("height")),
         })
@@ -624,6 +626,7 @@ def site_totals(site: dict) -> dict:
         "thin_pages": [page["path"] for page in pages if page["words"] < 80],
         "empty_links": sorted({f"«{text}» en {page['path']}" for page in pages for text in page["empty_links"]}),
         "languages": sorted({page["language"] for page in pages if page["language"]}),
+        "hreflangs": sorted({code for page in pages for code in page["hreflangs"]}),
         "trackers": merged("trackers"), "embeds": merged("embeds"), "cookie_tools": merged("cookie_tools"),
         "technologies": merged("technologies") + sorted({page["generator"] for page in pages if page["generator"]}),
         "schema_types": merged("schema_types"),
@@ -681,16 +684,18 @@ def build_checks(site: dict, totals: dict) -> list[dict]:
     dead = site["dead_anchors"]
     add("anchors", "Los enlaces a secciones (#) llevan a algún sitio", not dead,
         "" if not dead else f"Sin destino ({len(dead)}): {few([entry['to'] for entry in dead], 4)}")
-    add("empty_links", "Sin botones o enlaces vacíos", not totals["empty_links"],
-        "" if not totals["empty_links"] else few(totals["empty_links"], 4))
+    if totals["empty_links"]:
+        add("script_links", "Enlaces que solo funcionan con JavaScript (su dirección es «#»)", None,
+            few(totals["empty_links"], 4))
     add("titles", "Cada página tiene su propio título", *all_pages(
         totals["no_title"] + totals["repeated_titles"], f"{pages} páginas", "Faltan o se repiten"))
     add("descriptions", "Cada página tiene su propia descripción para Google", *all_pages(
         totals["no_description"] + totals["repeated_descriptions"], f"{pages} páginas", "Faltan o se repiten"))
     add("h1", "Cada página tiene un único titular principal (h1)", *all_pages(
         totals["no_h1"] + totals["many_h1"], f"{pages} páginas", "Sin h1 o con varios"))
-    add("alt", "Las imágenes tienen texto alternativo", totals["images_without_alt"] == 0,
-        f"{totals['images_without_alt']} de {totals['images']} imágenes sin texto alternativo")
+    add("alt", "Las imágenes dicen qué son, o están marcadas como decorativas", totals["images_without_alt"] == 0,
+        f"{totals['images']} imágenes" if not totals["images_without_alt"]
+        else f"{totals['images_without_alt']} de {totals['images']} imágenes sin atributo alt")
     add("language", "Las páginas declaran su idioma", *all_pages(
         totals["no_language"], few(totals["languages"]), "Sin idioma"))
     add("viewport", "Preparada para móvil (etiqueta viewport)", *all_pages(totals["no_viewport"], "", "Sin viewport"))
@@ -727,8 +732,9 @@ def describe_site(site: dict, totals: dict, checks: list[dict], text_budget: int
         f" WhatsApp link: {'yes' if totals['whatsapp'] else 'no'}",
         f"Slow HTML responses (over 2 s): {few(totals['slow_pages']) or 'none'}",
         f"Thin pages (under 80 words of own text): {few(totals['thin_pages']) or 'none'}",
+        f"Language versions linked for Google (hreflang): {few(totals['hreflangs']) or 'none declared'}",
         "",
-        "CHECKS (verified by code, trust them)",
+        "CHECKS (verified by code, trust them; n/a means it is a fact to know, not a failure)",
     ]
     lines += [f"- [{marks[check['ok']]}] {check['label']}" + (f" -- {check['detail']}" if check["detail"] else "")
               for check in checks]
@@ -746,7 +752,7 @@ def describe_site(site: dict, totals: dict, checks: list[dict], text_budget: int
                                  + (f" and {entry['pages'] - 1} more pages" if entry["pages"] > 1 else "")
                                  for entry in entries[:25]] or ["(none)"])
 
-    lines += ["", "PAGES (path | status | words | images/without alt | title | meta description | h1)"]
+    lines += ["", "PAGES (path | status | words | images/with no alt attribute | title | meta description | h1)"]
     for page in site["pages"]:
         if "title" not in page:
             lines.append(f"{page['path']} | {page['status'] or page['error']} | (not an HTML page)")
