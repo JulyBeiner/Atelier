@@ -18,7 +18,7 @@ stay as they are. A service talks to real patients only after I say yes.
 import json
 import re
 import unicodedata
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -170,6 +170,27 @@ def parse_spans(typed: str) -> list[list[str]]:
 
 def spans_text(spans: list[list[str]]) -> str:
     return ", ".join(f"{opens}-{closes}" for opens, closes in spans)
+
+
+def to_madrid(utc: datetime) -> datetime:
+    """A moment given in UTC, as the clocks in Madrid show it.
+
+    Madrid is one hour ahead of UTC, and two in summer time, which in the European Union runs from the
+    last Sunday of March to the last Sunday of October, changing at 01:00 UTC. Done by hand so the panel
+    needs no time zone data installed (Windows has none of its own for Python).
+    """
+    def last_sunday(month: int) -> datetime:
+        day = date(utc.year, month, 31)  # March and October both have 31 days
+        return datetime.combine(day - timedelta(days=(day.weekday() + 1) % 7), time(1))
+
+    summer = last_sunday(3) <= utc < last_sunday(10)
+    return utc + timedelta(hours=2 if summer else 1)
+
+
+def clinic_now() -> datetime:
+    """Now, on the clinic's clock. My clinics are in Madrid and my computer is in the Canaries, one hour
+    behind: the rehearsal has to offer the slots a patient in Madrid would be offered."""
+    return to_madrid(datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 def at_time(day: date, clock: str) -> datetime:
@@ -814,7 +835,7 @@ def whole(connection, service: dict) -> dict:
         "SELECT * FROM automation_messages WHERE service_id = ? ORDER BY id", (service["id"],)).fetchall()
     bookings = connection.execute(
         "SELECT * FROM automation_bookings WHERE service_id = ? ORDER BY starts_at", (service["id"],)).fetchall()
-    now = datetime.now()
+    now = clinic_now()
     service = dict(service)
     service["hours_text"] = {day: spans_text(service["config"]["hours"][day]) for day in DAYS}
     service["messages"] = []
@@ -933,7 +954,7 @@ def save_card(service_id: int, card: Card):
 @router.post("/api/automations/services/{service_id}/say")
 def say(service_id: int, said: Said):
     """The pretend patient writes, and the assistant answers. Nothing leaves this computer."""
-    now = datetime.now().replace(second=0, microsecond=0)
+    now = clinic_now().replace(second=0, microsecond=0)
     if said.clock:
         now = datetime.combine(now.date(), time.fromisoformat(said.clock))
     with get_connection() as connection:
@@ -953,7 +974,7 @@ def show_reminders(service_id: int):
     """Pretend it is the day before each appointment: show the reminder the patient would get."""
     with get_connection() as connection:
         service = fetch_service(connection, service_id)
-        now = datetime.now()
+        now = clinic_now()
         rows = connection.execute(
             "SELECT * FROM automation_bookings WHERE service_id = ? AND source = 'chat' AND reminded = 0"
             " AND starts_at > ? ORDER BY starts_at", (service_id, now.isoformat(timespec="minutes"))).fetchall()
@@ -1022,7 +1043,7 @@ def approve(service_id: int):
             missing = next(step["label"] for step in service["checklist"] if not step["done"])
             raise HTTPException(status_code=409, detail=f"Todavía falta: {missing[0].lower()}{missing[1:]}.")
         if service["state"] == "ready":
-            save(connection, service, approved_at=datetime.now().isoformat(timespec="seconds"))
+            save(connection, service, approved_at=clinic_now().isoformat(timespec="seconds"))
         return whole(connection, fetch_service(connection, service_id))
 
 
