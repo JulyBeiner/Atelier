@@ -35,6 +35,7 @@ Try it by hand with a job file the panel wrote:   python video.py private/videos
 
 import base64
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -66,6 +67,7 @@ FPS = 30
 JPEG_QUALITY = 92
 CRF = 20               # ffmpeg quality: lower is better and heavier
 MAKE_SECONDS = 600     # the whole job, at most
+LOOK_SECONDS = 90      # opening the clinic's website and photographing it, at most: some pages never finish
 SECONDS_EACH = 80      # what a video usually takes on my computer: for "quedan unos N minutos"
 CLOSED_STAGES = ("client", "not_interested")  # clinics I no longer write a first message to
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # on Windows, no black window pops up
@@ -749,8 +751,20 @@ def mix(clinic_id: int, ffmpeg: str) -> None:
 
 # ---------- In its own process: the browser and ffmpeg ----------
 
+SAID = {"last": ""}  # the last thing tell() said, for when the job has to give up
+
+
+def give_up_looking() -> None:
+    """The clinic's website hung: say where and stop this process at once. Some pages keep a browser waiting
+    for ever, and the videos behind this one in the line would wait with it."""
+    finish(False, f"Su web se quedó colgada en el móvil ({SAID['last'].rstrip('…').lower()}) y lo he parado. "
+                  "Prueba otra vez; si vuelve a pasar, dímelo.")
+    os._exit(1)
+
+
 def tell(progress: float, words: str) -> None:
     """A line for the panel. Only ASCII in it, so any Windows console can carry it."""
+    SAID["last"] = words
     print(json.dumps({"progress": round(progress, 3), "say": words}), flush=True)
 
 
@@ -777,16 +791,20 @@ def look(browser, url: str) -> tuple[bytes, str]:
             page.goto(url, wait_until="load", timeout=30_000)
         except Exception as error:
             raise RuntimeError("Su web no abrió en el móvil. Prueba otra vez en un rato.") from error
+        tell(0.04, "Esperando a que su web termine de cargar…")
         try:
             page.wait_for_load_state("networkidle", timeout=5_000)
         except Exception:
             pass  # some pages never go quiet (chats, video): what has loaded is enough
         page.wait_for_timeout(2_000)  # the opening animation
+        tell(0.06, "Quitando el aviso de cookies…")
         if page.evaluate(capture.ACCEPT_COOKIES):
             page.wait_for_timeout(900)  # so the cookie notice is not what the picture shows
         page.evaluate(capture.SCROLL_TO, 0)
+        tell(0.07, "Fotografiando su web…")
         session = context.new_cdp_session(page)
         shot = capture.photograph(session, "mobile", 0, device["viewport"]["height"], capture.DETAIL["mobile"], "jpeg")
+        tell(0.08, "Leyendo el texto de su web…")
         return shot, page.evaluate(PAGE_TEXT)
     finally:
         context.close()
@@ -878,7 +896,13 @@ def main(job_path: str) -> int:
             return finish(False, str(error))
         try:
             tell(0.02, "Abriendo su web en un móvil…")
-            shot, text = look(browser, job["url"])
+            patience = threading.Timer(LOOK_SECONDS, give_up_looking)
+            patience.daemon = True
+            patience.start()
+            try:
+                shot, text = look(browser, job["url"])
+            finally:
+                patience.cancel()
             booking = job["kind"] == "booking"
             treatment = (job["treatment"] or treatment_in(text)) if booking else ""
             source = "card" if job["treatment"] else "web" if treatment else ""
