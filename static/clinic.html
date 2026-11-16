@@ -76,6 +76,7 @@
       </div>
       <p class="section-note">Un minuto en vertical: lo que he visto en su web, un prototipo de cómo quedaría y la invitación a una llamada. Lo hace Atelier solo y es gratis. Lo descargas y lo adjuntas al mensaje.</p>
       <div id="video-box"></div>
+      <div id="audio-box"></div>
     </section>
 
     <section aria-labelledby="draft-title" id="mensaje">
@@ -606,13 +607,14 @@ function renderVideo() {
     player.controls = true;
     player.playsInline = true;
     player.preload = "metadata";
-    player.src = "/api/crm/clinics/" + clinicId + "/video.mp4?v=" + encodeURIComponent(made.made_at);
+    player.src = "/api/crm/clinics/" + clinicId + "/video.mp4?v=" + encodeURIComponent(made.mixed_at || made.made_at);
     const about = el("div", "video-about");
     if (video.outdated) about.append(el("p", "draft-warning", "La radiografía es más nueva que este vídeo: hazlo otra vez para que cuenten lo mismo."));
     const from = { card: "de su ficha", web: "de su web" }[made.treatment_from] || "porque no encontré ninguno";
     about.append(
       el("p", "", "Hecho el " + sayMoment(made.made_at) + ". Dura " + Math.round(made.seconds) + " segundos y pesa "
-        + (made.bytes / 1048576).toFixed(1).replace(".", ",") + " MB."),
+        + (made.bytes / 1048576).toFixed(1).replace(".", ",") + " MB. "
+        + (made.audio ? "Lleva el audio «" + made.audio.name + "»." : "Sin audio.")),
       el("p", "sub", "En el chat pide cita para «" + made.treatment + "» (" + from + "). Si prefieres otro tratamiento, escríbelo el primero en «Tratamientos estrella» de la ficha y hazlo otra vez."),
     );
     const save = link("Descargar el vídeo", "/api/crm/clinics/" + clinicId + "/video.mp4?download=true");
@@ -638,7 +640,101 @@ async function followVideo() {
     if (before === "working" && clinic.video.state === "done") flash("Vídeo hecho. Míralo antes de enviarlo.");
   } catch (error) { showError(error.message); }
   renderVideo();
-  if (clinic.video.state !== "working" && !$("draft").contains(document.activeElement)) renderDraft();
+  if (clinic.video.state !== "working") {
+    renderAudio();
+    if (!$("draft").contains(document.activeElement)) renderDraft();
+  }
+}
+
+// ---- The sound of the video ----
+// My voice for this clinic, or one audio for every video. The video is not filmed again: the sound is put
+// on it in a second or two. Drawn apart from the video, so a file I am choosing is not lost while it records.
+
+function renderAudio() {
+  const video = clinic.video;
+  if (!video.ready) {
+    $("audio-box").replaceChildren();
+    return;
+  }
+  const { own, all } = video.audio;
+  const named = (audio) => "«" + audio.name + "», de " + Math.round(audio.seconds) + " segundos";
+  const removeButton = (forAll, words) => {
+    const button = el("button", "linkish", words);
+    button.type = "button";
+    button.onclick = () => changeAudio(() => send("DELETE", "/api/crm/clinics/" + clinicId + "/video/audio?for_all=" + forAll),
+      forAll ? "He quitado el audio de todos los vídeos." : "He quitado su audio.");
+    return button;
+  };
+
+  const parts = [el("h3", "", "Audio")];
+  if (own) {
+    const line = el("p", "", "Lleva tu audio para esta clínica: " + named(own) + ". ");
+    line.append(removeButton(false, "Quitarlo"));
+    parts.push(line);
+  }
+  if (all) {
+    const line = el("p", own ? "sub" : "", own
+      ? "Hay un audio para todos los vídeos (" + named(all) + "), pero aquí manda el suyo. "
+      : "Lleva el audio de todos los vídeos: " + named(all) + ". ");
+    line.append(removeButton(true, "Quitarlo de todos"));
+    parts.push(line);
+  }
+  if (!own && !all) {
+    parts.push(el("p", "sub", "Sin audio. Puedes subir tu voz o una música (mp3, m4a, wav…), para esta clínica o para todos los vídeos."));
+  }
+  const used = own || all;
+  if (used && video.made) {
+    const length = Math.round(video.made.seconds);
+    if (used.seconds > video.made.seconds + 0.5) parts.push(el("p", "sub", "El audio dura más que el vídeo (" + length + " segundos): lo corto al final con un fundido."));
+    else if (used.seconds < video.made.seconds - 2) parts.push(el("p", "sub", "El audio dura menos que el vídeo (" + length + " segundos): el final va en silencio."));
+  }
+
+  const form = el("form", "audio-form");
+  const label = el("label", "", used ? "Cambiar el audio" : "Subir un audio");
+  label.htmlFor = "audio-file";
+  const file = el("input");
+  file.type = "file";
+  file.id = "audio-file";
+  file.accept = "audio/*,.mp3,.m4a,.wav,.aac,.ogg,.opus,.flac";
+  const forAll = el("label", "check");
+  const box = el("input");
+  box.type = "checkbox";
+  forAll.append(box, "Para todos los vídeos");
+  const upload = el("button", "quiet small", "Subir audio");
+  upload.type = "submit";
+  form.append(label, file, forAll, upload);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!file.files.length) {
+      showError("Elige primero el archivo de audio.");
+      return;
+    }
+    const data = new FormData();
+    data.append("file", file.files[0]);
+    data.append("for_all", box.checked ? "true" : "false");
+    upload.disabled = true;
+    upload.textContent = "Subiendo…";
+    changeAudio(() => api("/api/crm/clinics/" + clinicId + "/video/audio", { method: "POST", body: data }),
+      box.checked ? "Audio puesto en todos los vídeos." : "Audio puesto en su vídeo.");
+  });
+  parts.push(form);
+  $("audio-box").replaceChildren(...parts);
+}
+
+// The player lets go of the video first: on Windows a file that is being read cannot be replaced.
+async function changeAudio(work, done) {
+  showError("");
+  document.querySelectorAll("#video-box video").forEach((player) => {
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+  });
+  try {
+    clinic.video = await work();
+    flash(done);
+  } catch (error) { showError(error.message); }
+  renderVideo();
+  renderAudio();
 }
 
 $("video-button").addEventListener("click", async () => {
@@ -656,6 +752,7 @@ function render(withCard) {
   renderPath();
   renderXray();
   renderVideo();
+  renderAudio();
   if (!$("draft").contains(document.activeElement)) renderDraft();
   renderStep();
   renderHistory();

@@ -14,6 +14,10 @@ How it is made: plan() writes the words from the X-ray (instant). Then this file
 like capture.py, so the browser never blocks the panel: it opens the clinic's homepage on a phone, fills
 static/video.html with the words and the picture, photographs it frame by frame and joins the frames into
 an mp4 with ffmpeg. The videos stay in private/videos, which git ignores.
+
+A video can carry sound: my voice for one clinic, or one audio for all the videos (music, or words that
+fit every clinic). The clinic's own audio wins. The picture is recorded once, without sound; putting or
+changing the audio only joins the two again, in a second or two, without filming anything.
 It needs:   pip install imageio-ffmpeg   (ffmpeg comes inside)
 Try it by hand with a job file the panel wrote:   python video.py private/videos/clinic-7-job.json
 """
@@ -21,6 +25,7 @@ Try it by hand with a job file the panel wrote:   python video.py private/videos
 import base64
 import json
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -50,6 +55,12 @@ JPEG_QUALITY = 92
 CRF = 20               # ffmpeg quality: lower is better and heavier
 MAKE_SECONDS = 600     # the whole job, at most
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # on Windows, no black window pops up
+
+# The sound: the kinds of file I can upload, how heavy, and the fade when the audio is longer than the video.
+AUDIO_KINDS = (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".opus", ".flac")
+AUDIO_MAX_BYTES = 40 * 1024 * 1024
+FADE_SECONDS = 1.5
+NO_FFMPEG = "Falta ffmpeg. Escribe en la terminal: pip install imageio-ffmpeg"
 
 # The angles that already have their prototype.
 READY_ANGLES = {"automation"}
@@ -213,8 +224,13 @@ LOCK = threading.Lock()
 
 
 def files(clinic_id: int) -> tuple[Path, Path]:
-    """The video of a clinic and the facts of how it was made."""
+    """The video of a clinic (with its sound, if it has one) and the facts of how it was made."""
     return VIDEOS_DIR / f"clinic-{clinic_id}.mp4", VIDEOS_DIR / f"clinic-{clinic_id}.json"
+
+
+def silent_copy(clinic_id: int) -> Path:
+    """The picture without sound, as it was recorded. The audio is put on a copy of it."""
+    return VIDEOS_DIR / f"clinic-{clinic_id}-silent.mp4"
 
 
 def made(clinic_id: int) -> dict | None:
@@ -244,6 +260,8 @@ def status(clinic: dict) -> dict:
         "error": job.get("error", "") if state == "failed" else "",
         "made": facts,
         "outdated": bool(facts and ready.get("xray_at") and facts.get("xray_at") != ready["xray_at"]),
+        # own: the audio uploaded for this clinic. all: the one for every video. Without the file paths.
+        "audio": {"own": shown(audio_info(clinic["id"])), "all": shown(audio_info(None))},
     }
 
 
@@ -257,9 +275,8 @@ def start(clinic: dict) -> dict:
             raise HTTPException(status_code=409, detail="Ya se está haciendo un vídeo: espera a que termine.")
         JOBS[clinic["id"]] = {"state": "working", "progress": 0.0, "say": "Empezando…", "error": ""}
     VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    video, facts = files(clinic["id"])
     job_file = VIDEOS_DIR / f"clinic-{clinic['id']}-job.json"
-    job_file.write_text(json.dumps(job | {"video": str(video), "facts": str(facts)}, ensure_ascii=False), encoding="utf-8")
+    job_file.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     threading.Thread(target=follow, args=(clinic["id"], job_file), daemon=True).start()
     return status(clinic)
 
@@ -305,12 +322,168 @@ def follow(clinic_id: int, job_file: Path) -> None:
 
 
 def forget(clinic_id: int) -> None:
-    """Delete everything of a clinic's video. For when the clinic is erased."""
+    """Delete everything of a clinic's video, its own audio too. For when the clinic is erased."""
     video, facts = files(clinic_id)
-    for path in (video, facts, video.with_name(video.stem + "-part.mp4"), VIDEOS_DIR / f"clinic-{clinic_id}-job.json"):
+    silent = silent_copy(clinic_id)
+    for path in (video, facts, silent, part_of(video), part_of(silent), VIDEOS_DIR / f"clinic-{clinic_id}-job.json"):
         path.unlink(missing_ok=True)
+    drop_audio(clinic_id)
     with LOCK:
         JOBS.pop(clinic_id, None)
+
+
+# ---------- The sound ----------
+
+def part_of(path: Path) -> Path:
+    """Where a file is written before it is finished: a stopped job never leaves a file that looks done."""
+    return path.with_name(path.stem + "-part.mp4")
+
+
+def find_ffmpeg() -> str:
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except (ImportError, RuntimeError):
+        return ""
+
+
+def audio_slot(clinic_id: int | None) -> str:
+    """The start of the audio's file names: one clinic's, or the one for all the videos (None)."""
+    return f"clinic-{clinic_id}-audio" if clinic_id is not None else "all-audio"
+
+
+def audio_info(clinic_id: int | None) -> dict | None:
+    """One clinic's audio (or the one for all, with None): its name when I uploaded it, how long it lasts
+    and its file. None when there is none."""
+    slot = audio_slot(clinic_id)
+    try:
+        about = json.loads((VIDEOS_DIR / f"{slot}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    path = VIDEOS_DIR / (slot + about.get("kind", ""))
+    return about | {"path": str(path), "for_all": clinic_id is None} if path.is_file() else None
+
+
+def shown(audio: dict | None) -> dict | None:
+    """An audio as the card shows it."""
+    return {key: audio[key] for key in ("name", "seconds", "added_at", "for_all")} if audio else None
+
+
+def audio_for(clinic_id: int) -> dict | None:
+    """The audio a clinic's video carries: its own, or else the one for all."""
+    return audio_info(clinic_id) or audio_info(None)
+
+
+def seconds_of(path: Path, ffmpeg: str) -> float | None:
+    """How long an audio lasts, or None when ffmpeg finds no sound in it."""
+    done = subprocess.run([ffmpeg, "-hide_banner", "-i", str(path)], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
+    length = re.search(r"Duration: (\d+):(\d\d):(\d\d(?:\.\d+)?)", done.stderr)
+    if not length or "Audio:" not in done.stderr:
+        return None
+    hours, minutes, seconds = length.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def drop_audio(clinic_id: int | None) -> None:
+    slot = audio_slot(clinic_id)
+    for path in [VIDEOS_DIR / f"{slot}.json", *(VIDEOS_DIR / (slot + kind) for kind in AUDIO_KINDS)]:
+        path.unlink(missing_ok=True)
+
+
+def save_audio(clinic_id: int, for_all: bool, filename: str, content: bytes) -> None:
+    """Keep an audio I uploaded, for this clinic or (for_all) for every video, and put it on the videos."""
+    kind = Path(filename or "").suffix.lower()
+    if kind not in AUDIO_KINDS:
+        raise HTTPException(status_code=422, detail="Ese archivo no es un audio que conozca."
+                                                    " Sube un mp3, m4a, wav, aac, ogg, opus o flac.")
+    if len(content) > AUDIO_MAX_BYTES:
+        raise HTTPException(status_code=422, detail="Pesa demasiado: el máximo son 40 MB.")
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise HTTPException(status_code=409, detail=NO_FFMPEG)
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    owner = None if for_all else clinic_id
+    slot = audio_slot(owner)
+    new = VIDEOS_DIR / f"{slot}-new{kind}"
+    new.write_bytes(content)
+    seconds = seconds_of(new, ffmpeg)
+    if seconds is None:
+        new.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail="No he podido leer ese audio. Prueba a exportarlo como mp3.")
+    drop_audio(owner)  # the one before, whatever its kind
+    new.replace(VIDEOS_DIR / (slot + kind))
+    about = {"name": Path(filename).name[:120], "kind": kind, "seconds": round(seconds, 1),
+             "added_at": datetime.now().isoformat(timespec="seconds")}
+    (VIDEOS_DIR / f"{slot}.json").write_text(json.dumps(about, ensure_ascii=False), encoding="utf-8")
+    remix(clinic_id, for_all)
+
+
+def remove_audio(clinic_id: int, for_all: bool) -> None:
+    """Take the audio off this clinic's video, or off every video (for_all)."""
+    drop_audio(None if for_all else clinic_id)
+    remix(clinic_id, for_all)
+
+
+def remix(clinic_id: int, for_all: bool) -> None:
+    """Put the sound again on the videos an audio change touches. This clinic's at once; with for_all,
+    the others in the background (the ones with their own audio do not change)."""
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise HTTPException(status_code=409, detail=NO_FFMPEG)
+    if for_all:
+        others = [int(path.name.split("-")[1]) for path in VIDEOS_DIR.glob("clinic-*-silent.mp4")]
+        others = [other for other in others if other != clinic_id and not audio_info(other)]
+        threading.Thread(target=mix_many, args=(others, ffmpeg), daemon=True).start()
+    try:
+        mix_now(clinic_id, ffmpeg)
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=f"He guardado el audio, pero no he podido ponerlo en el vídeo: {error}")
+
+
+def mix_many(clinic_ids: list[int], ffmpeg: str) -> None:
+    for clinic_id in clinic_ids:
+        try:
+            mix_now(clinic_id, ffmpeg)
+        except Exception:
+            pass  # that clinic keeps its video as it was; making it again puts the sound
+
+
+def mix_now(clinic_id: int, ffmpeg: str) -> None:
+    """mix(), unless the clinic's video is being made: the job puts the sound when it finishes."""
+    if JOBS.get(clinic_id, {}).get("state") != "working":
+        mix(clinic_id, ffmpeg)
+
+
+def mix(clinic_id: int, ffmpeg: str) -> None:
+    """Make the clinic's video from its silent copy and its audio. The picture is copied as it is.
+
+    An audio longer than the video is cut with a fade at the end; a shorter one leaves the end silent.
+    """
+    video, facts_file = files(clinic_id)
+    silent = silent_copy(clinic_id)
+    try:
+        facts = json.loads(facts_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not silent.is_file():
+        return
+    audio, part = audio_for(clinic_id), part_of(video)
+    if audio:
+        length = facts["seconds"]
+        command = [ffmpeg, "-y", "-loglevel", "error", "-i", str(silent), "-i", audio["path"],
+                   "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-t", str(length)]
+        if audio["seconds"] > length - 0.2:
+            command += ["-af", f"afade=t=out:st={max(0.0, length - FADE_SECONDS):.2f}:d={FADE_SECONDS}"]
+        done = subprocess.run(command + ["-movflags", "+faststart", str(part)], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", creationflags=NO_WINDOW)
+        if done.returncode != 0:
+            raise RuntimeError("ffmpeg: " + (done.stderr.strip()[-300:] or "sin detalles"))
+    else:
+        shutil.copyfile(silent, part)
+    replace(part, video)
+    facts.update(audio=shown(audio), mixed_at=datetime.now().isoformat(timespec="seconds"), bytes=video.stat().st_size)
+    facts_file.write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ---------- In its own process: the browser and ffmpeg ----------
@@ -428,11 +601,9 @@ def replace(new: Path, old: Path) -> None:
 
 def main(job_path: str) -> int:
     job = json.loads(Path(job_path).read_text(encoding="utf-8"))
-    try:
-        import imageio_ffmpeg
-        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    except (ImportError, RuntimeError):
-        return finish(False, "Falta ffmpeg. Escribe en la terminal: pip install imageio-ffmpeg")
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        return finish(False, NO_FFMPEG)
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -452,17 +623,18 @@ def main(job_path: str) -> int:
             data = script(job, treatment) | {"shot": data_uri(shot, "image/jpeg"),
                                              "logo": data_uri(LOGO.read_bytes(), "image/svg+xml")}
             tell(0.1, "Montando las escenas…")
-            video = Path(job["video"])
-            part = video.with_name(video.stem + "-part.mp4")  # a stopped video never looks finished
-            done = record(browser, page_html(data), part, ffmpeg)
-            replace(part, video)
+            clinic_id = job["clinic_id"]
+            silent = silent_copy(clinic_id)
+            done = record(browser, page_html(data), part_of(silent), ffmpeg)
+            replace(part_of(silent), silent)
             facts = {
                 "made_at": datetime.now().isoformat(timespec="seconds"), "xray_at": job["xray_at"],
                 "angle": job["angle"], "key": job["key"], "treatment": treatment or NO_TREATMENT,
-                "treatment_from": source, "bytes": video.stat().st_size,
-                "took": round(time.monotonic() - started), **done,
+                "treatment_from": source, "took": round(time.monotonic() - started), **done,
             }
-            Path(job["facts"]).write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
+            files(clinic_id)[1].write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
+            tell(0.97, "Poniendo el audio…" if audio_for(clinic_id) else "Terminando…")
+            mix(clinic_id, ffmpeg)
             return finish(True, seconds=done["seconds"])
         except Exception as error:
             words = (str(error).strip().splitlines() or [type(error).__name__])[0]

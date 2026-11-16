@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -433,6 +433,28 @@ def video_file(clinic_id: int, download: bool = False):
     name = re.sub(r"[^a-z0-9]+", "-", clinic_web.plain(clinic["name"])).strip("-")[:60] or "clinica"
     return FileResponse(path, media_type="video/mp4", filename=f"propuesta-{name}.mp4" if download else None,
                         headers={"Cache-Control": "no-store"})
+
+
+@router.post("/clinics/{clinic_id}/video/audio")
+def add_video_audio(clinic_id: int, file: UploadFile = File(...), for_all: bool = Form(False)):
+    """Put an audio on the clinic's video (my voice, a music), or on every video with for_all. Free.
+
+    The video is not filmed again: the sound is joined to the picture in a second or two.
+    """
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    content = file.file.read(video.AUDIO_MAX_BYTES + 1)
+    video.save_audio(clinic_id, for_all, file.filename or "", content)
+    return video.status(clinic)
+
+
+@router.delete("/clinics/{clinic_id}/video/audio")
+def remove_video_audio(clinic_id: int, for_all: bool = False):
+    """Take the audio off the clinic's video, or off every video with for_all."""
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    video.remove_audio(clinic_id, for_all)
+    return video.status(clinic)
 
 
 # ---- History ----
