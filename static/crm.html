@@ -100,7 +100,18 @@
         <span class="count-actions">
           <button type="button" class="quiet small" id="read-all" hidden></button>
           <button type="button" class="quiet small" id="xray-all" hidden></button>
+          <button type="button" class="quiet small" id="video-all" hidden></button>
         </span>
+      </div>
+
+      <!-- The videos being made one after another. They go on with the page closed. -->
+      <div class="video-line" id="video-line" aria-live="polite" hidden>
+        <p class="video-doing" id="video-line-text"></p>
+        <div class="meter"><div class="meter-fill" id="video-line-fill"></div></div>
+        <div class="video-line-foot">
+          <p class="sub" id="video-line-note"></p>
+          <button type="button" class="quiet small" id="video-stop">Parar después de este</button>
+        </div>
       </div>
 
       <div class="table-wrap">
@@ -111,6 +122,7 @@
               <th data-sort="area"><button type="button">Barrio</button></th>
               <th data-sort="stage"><button type="button">Etapa</button></th>
               <th data-sort="hole"><button type="button">Radiografía</button></th>
+              <th data-sort="video"><button type="button">Vídeo</button></th>
               <th data-sort="last_contact_on"><button type="button">Último contacto</button></th>
               <th data-sort="next_step_on"><button type="button">Próximo paso</button></th>
               <th>Abrir</th>
@@ -216,6 +228,8 @@ function todoRow(clinic, mode) {
       hole.append(xrayDots(clinic.xray), " " + holeLabel(clinic.xray));
       meta.append(hole);
     }
+    const tag = videoTag(clinic, "Vídeo: ");
+    if (tag) meta.append(tag);
     if (clinic.kind) meta.append(el("span", "", CLINIC_KINDS[clinic.kind]));
     if (!isWeb(clinic.website) && !isWeb(clinic.instagram)) meta.append(el("span", "", "Falta su web y su Instagram"));
   } else {
@@ -351,9 +365,18 @@ function holeWeight(clinic) {
   return hole ? (hole.sure ? hole.weight : 1) : 0;
 }
 
+// The video column starts with what is moving or needs me: being made, waiting, failed, not made, old, done.
+// The clinics whose video cannot be made yet go last.
+const VIDEO_ORDER = { working: 0, waiting: 1, failed: 2, none: 3, done: 5 };
+function videoOrder(clinic) {
+  const video = clinic.video;
+  if (video.state === "done") return video.outdated ? 4 : 5;
+  return video.ready || video.state !== "none" ? VIDEO_ORDER[video.state] : null;
+}
+
 function inOrder(rows) {
   const value = (clinic) => sort.key === "stage" ? Object.keys(STAGES).indexOf(clinic.stage)
-    : sort.key === "hole" ? holeWeight(clinic) : clinic[sort.key];
+    : sort.key === "hole" ? holeWeight(clinic) : sort.key === "video" ? videoOrder(clinic) : clinic[sort.key];
   return [...rows].sort((a, b) => {
     const one = value(a), other = value(b);
     const empty = (thing) => thing === null || thing === "";
@@ -365,6 +388,7 @@ function inOrder(rows) {
 
 function clinicRow(clinic) {
   const row = el("tr", clinic.do_not_contact ? "off" : "");
+  row.dataset.id = clinic.id;
   const name = el("td");
   name.append(link(clinic.name, "/crm/clinics/" + clinic.id, "clinic-name"));
   if (clinic.address) name.append(el("div", "sub", clinic.address));
@@ -387,6 +411,9 @@ function clinicRow(clinic) {
     xray.append("—");
   }
 
+  const film = el("td");
+  fillVideoCell(film, clinic);
+
   const last = el("td", clinic.last_contact_on ? "nowrap" : "blank", clinic.last_contact_on ? sayDay(clinic.last_contact_on, today) : "—");
 
   const next = el("td");
@@ -401,8 +428,23 @@ function clinicRow(clinic) {
 
   const open = el("td");
   open.append(reachLinks(clinic));
-  row.append(name, area, stage, xray, last, next, open);
+  row.append(name, area, stage, xray, film, last, next, open);
   return row;
+}
+
+// The video cell: its state with a dot, and below, when it was made or why it cannot be made yet.
+function fillVideoCell(cell, clinic) {
+  const video = clinic.video;
+  const tag = videoTag(clinic);
+  cell.className = "video-cell" + (tag ? "" : " blank");
+  if (!tag) {
+    cell.replaceChildren(el("div", "", "—"), el("div", "sub", video.short));
+    return;
+  }
+  const below = video.state === "done"
+    ? (video.outdated ? "La radiografía es más nueva" : "Hecho " + sayDay(video.made_at.slice(0, 10), today))
+    : video.state === "failed" ? "El porqué está en su ficha" : "";
+  cell.replaceChildren(tag, ...(below ? [el("div", "sub", below)] : []));
 }
 
 function renderList() {
@@ -490,6 +532,82 @@ $("xray-all").addEventListener("click", async () => {
   await refresh();
 });
 
+// ---- The videos of all the clinics, one after another ----
+// The line lives in the panel: it goes on with this page closed. Here I only start it, follow it and stop it.
+
+let videoLine = { running: false, done: 0, failed: 0, total: 0, waiting: [], now: null };
+let lineTimer = null;
+
+// The clinics whose video is missing: no video, an old one or one that failed. The server picks the same ones.
+const wantedVideos = () => clinics.filter((clinic) => clinic.video.wanted);
+
+function renderLine() {
+  const line = videoLine;
+  const wanted = wantedVideos().length;
+  $("video-all").hidden = line.running || wanted === 0;
+  $("video-all").textContent = "Hacer los vídeos que faltan (" + wanted + ", " + videoMinutes(wanted) + ")";
+  $("video-line").hidden = !line.running;
+  clearTimeout(lineTimer);
+  if (!line.running) return;
+
+  const finished = line.done + line.failed;
+  const now = line.now;
+  $("video-line-text").textContent = "Vídeos: " + finished + " de " + line.total + " hechos."
+    + (now ? " Ahora: " + now.clinic + ", " + Math.round(now.progress * 100) + " %." : "");
+  const share = line.total ? (finished + (now ? now.progress : 0)) / line.total : 0;
+  $("video-line-fill").style.width = Math.round(Math.min(share, 1) * 100) + "%";
+  $("video-line-note").textContent = (line.minutes_left > 1 ? "Quedan unos " + line.minutes_left + " min. " : "Queda 1 min o menos. ")
+    + "Puedes cerrar esta página: siguen haciéndose mientras el panel esté encendido.";
+  $("video-stop").hidden = line.waiting.length === 0;
+  lineTimer = setTimeout(followLine, 3000);
+}
+
+// Ask how the line goes. When a video finishes, the whole list is drawn again; otherwise only the row of
+// the video being made moves.
+async function followLine() {
+  const before = videoLine;
+  try {
+    videoLine = await api("/api/crm/videos");
+  } catch (error) {
+    showError(error.message);
+    lineTimer = setTimeout(followLine, 10000);
+    return;
+  }
+  const line = videoLine;
+  const moved = line.done + line.failed !== before.done + before.failed
+    || (line.now && line.now.clinic_id) !== (before.now && before.now.clinic_id) || !line.running;
+  if (moved) {
+    if (before.running && !line.running) {
+      flash("Vídeos hechos: " + line.done + " de " + line.total + "."
+        + (line.failed ? " " + line.failed + " fallaron: el porqué está en su ficha." : " Míralos antes de enviarlos."));
+    }
+    await refresh();
+    return;
+  }
+  const clinic = line.now && clinics.find((one) => one.id === line.now.clinic_id);
+  if (clinic) {
+    clinic.video.state = "working";
+    clinic.video.progress = line.now.progress;
+    const cell = document.querySelector('tr[data-id="' + clinic.id + '"] .video-cell');
+    if (cell) fillVideoCell(cell, clinic);
+  }
+  renderLine();
+}
+
+$("video-all").addEventListener("click", async () => {
+  $("video-all").disabled = true;
+  await act(async () => { videoLine = await send("POST", "/api/crm/videos"); }, refresh,
+    "Vídeos en marcha: se hacen uno detrás de otro.");
+  $("video-all").disabled = false;
+});
+
+$("video-stop").addEventListener("click", async () => {
+  $("video-stop").disabled = true;
+  await act(async () => { videoLine = await send("DELETE", "/api/crm/videos"); }, refresh,
+    "Paro cuando termine el vídeo que se está haciendo.");
+  $("video-stop").disabled = false;
+});
+
 // Clinics waiting in the private folder: offer to bring them in.
 async function checkImport() {
   try {
@@ -538,13 +656,15 @@ document.querySelectorAll(".clinics th[data-sort] button").forEach((button) => {
 
 async function refresh() {
   try {
-    const [data, list] = await Promise.all([api("/api/crm/today"), api("/api/crm/clinics")]);
+    const [data, list, line] = await Promise.all([api("/api/crm/today"), api("/api/crm/clinics"), api("/api/crm/videos")]);
     clinics = list;
+    videoLine = line;
     renderToday(data);
     fillFilters();
     restoreFilters();
     renderList();
     showButtons();
+    renderLine();
   } catch (error) { showError("No se pudo cargar el CRM: " + error.message); }
   checkImport();
 }

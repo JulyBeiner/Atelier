@@ -19,6 +19,10 @@ like capture.py, so the browser never blocks the panel: it opens the clinic's ho
 static/video.html with the words and the picture, photographs it frame by frame and joins the frames into
 an mp4 with ffmpeg. The videos stay in private/videos, which git ignores.
 
+Videos are made one at a time, in a line: one clinic's from its card, or all the missing ones from the list
+of clinics. The line lives in the panel, so it goes on with the page closed; if the panel stops, the line
+is lost (the video being made may still finish).
+
 A video can carry sound: my voice for one clinic, or one audio for all the videos (music, or words that
 fit every clinic). The clinic's own audio wins. The picture is recorded once, without sound; putting or
 changing the audio only joins the two again, in a second or two, without filming anything.
@@ -59,6 +63,8 @@ FPS = 30
 JPEG_QUALITY = 92
 CRF = 20               # ffmpeg quality: lower is better and heavier
 MAKE_SECONDS = 600     # the whole job, at most
+SECONDS_EACH = 80      # what a video usually takes on my computer: for "quedan unos N minutos"
+CLOSED_STAGES = ("client", "not_interested")  # clinics I no longer write a first message to
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # on Windows, no black window pops up
 
 # The sound: the kinds of file I can upload, how heavy, and the fade when the audio is longer than the video.
@@ -69,6 +75,8 @@ NO_FFMPEG = "Falta ffmpeg. Escribe en la terminal: pip install imageio-ffmpeg"
 
 # The angles that already have their prototype.
 READY_ANGLES = {"automation", "marketing"}
+# Why a clinic has no video yet, in the list of clinics, for the holes that need me to look at its website.
+NOT_READY_SHORT = {"no_web": "Falta su web", "web_down": "Su web no abrió", "web_blocked": "No pude leer su web"}
 # The prototype each hole gets. Every other hole of a ready angle gets "booking".
 PROTOTYPES = {"low_rating": "review", "fair_rating": "review", "few_reviews": "review", "some_reviews": "review",
               "no_tracking": "sources", "no_instagram": "posts"}
@@ -190,24 +198,26 @@ def initials(name: str) -> str:
 def plan(clinic: dict) -> dict:
     """What the video of a clinic will say, or why it cannot be made yet. Instant: it opens nothing.
 
-    ready is False when the X-ray is missing, unsure, or its hole has no prototype yet; why says what to do.
+    ready is False when the X-ray is missing, unsure, or its hole has no prototype yet; why says what to do,
+    and short says it in two or three words, for the list of clinics.
     kind is the prototype: booking, review, sources or posts.
     """
     xray = clinic.get("xray")
     if not xray:
-        return {"ready": False, "why": "Primero haz su radiografía rápida: el vídeo sale de su agujero más grande."}
+        return {"ready": False, "short": "Sin radiografía",
+                "why": "Primero haz su radiografía rápida: el vídeo sale de su agujero más grande."}
     hole = xray.get("hole")
     key = hole["key"] if hole else "none"
     if key in outreach.NOT_READY:
-        return {"ready": False, "why": outreach.NOT_READY[key]}
+        return {"ready": False, "short": NOT_READY_SHORT.get(key, "Mira su web"), "why": outreach.NOT_READY[key]}
     angle = outreach.angle_of(key)
     if angle not in READY_ANGLES:
-        return {"ready": False, "angle": angle,
+        return {"ready": False, "angle": angle, "short": "Agujero de web: más adelante",
                 "why": f"Su agujero es de {outreach.ANGLES[angle]}, y ese vídeo llega en el siguiente paso de Atelier."
                        " De momento están los de automatizaciones y los de marketing."}
     url = tidy_url((clinic.get("xray_scan") or {}).get("url") or clinic.get("website") or "")
     if not url:
-        return {"ready": False, "why": "Falta su web en la ficha."}
+        return {"ready": False, "short": "Falta su web", "why": "Falta su web en la ficha."}
 
     signals = (clinic.get("web_scan") or {}).get("signals") or {}
     kind = PROTOTYPES.get(key, "booking")
@@ -293,10 +303,13 @@ def script(job: dict, treatment: str) -> dict:
     }
 
 
-# ---------- In the panel: start a video and follow it ----------
+# ---------- In the panel: make the videos, one after another, and follow them ----------
 
 JOBS: dict[int, dict] = {}  # clinic id → state, progress, what it is doing and the error. Lost on a restart.
+LINE: deque[dict] = deque()  # the plans of the videos waiting their turn, first one first
+BATCH = {"total": 0, "done": 0, "failed": 0}  # the videos asked for since the line was last empty
 LOCK = threading.Lock()
+RUNNING = {"line": False}  # True while a thread is working the line; never two at once
 
 
 def files(clinic_id: int) -> tuple[Path, Path]:
@@ -318,50 +331,137 @@ def made(clinic_id: int) -> dict | None:
         return None
 
 
-def status(clinic: dict) -> dict:
-    """Everything the card needs to show the video section.
+def summary(clinic: dict, ready: dict | None = None, facts: dict | None = None) -> dict:
+    """The video of a clinic in a few words, for the lists. Instant: it only reads a small file.
 
-    state: none (no video yet), working, done or failed. made: the facts of the last video, which stays
-    even when a new one fails. outdated: the X-ray was taken again after the video was made.
+    state: none (no video yet), waiting (in the line), working, done or failed. outdated: the X-ray was
+    taken again after the video was made. wanted: the button for all the missing videos would make it.
     """
-    ready = plan(clinic)
+    ready = ready or plan(clinic)
+    facts = facts if facts is not None else made(clinic["id"])
     job = dict(JOBS.get(clinic["id"], {}))
-    facts = made(clinic["id"])
     state = job.get("state") or ("done" if facts else "none")
     if state == "done" and not facts:
         state = "none"
+    outdated = bool(facts and ready.get("xray_at") and facts.get("xray_at") != ready["xray_at"])
+    may_write = not clinic.get("do_not_contact") and clinic.get("stage") not in CLOSED_STAGES
     return {
-        "ready": ready["ready"], "why": ready["why"], "state": state,
-        "progress": job.get("progress", 0.0), "say": job.get("say", ""),
-        "error": job.get("error", "") if state == "failed" else "",
+        "ready": ready["ready"], "short": ready.get("short", ""), "state": state,
+        "progress": job.get("progress", 0.0), "outdated": outdated,
+        "made_at": facts.get("made_at") if facts else None,
+        "wanted": bool(ready["ready"] and may_write and (state in ("none", "failed") or (state == "done" and outdated))),
+    }
+
+
+def status(clinic: dict) -> dict:
+    """Everything the card needs to show the video section: the summary and more.
+
+    made: the facts of the last video, which stays even when a new one fails. ahead: while it waits, how
+    many videos go before it.
+    """
+    ready = plan(clinic)
+    facts = made(clinic["id"])
+    short = summary(clinic, ready, facts)
+    job = dict(JOBS.get(clinic["id"], {}))
+    with LOCK:
+        waiting = [one["clinic_id"] for one in LINE]
+        working = any(one.get("state") == "working" for one in JOBS.values())
+    ahead = waiting.index(clinic["id"]) + working if clinic["id"] in waiting else 0
+    return short | {
+        "why": ready["why"], "say": job.get("say", ""), "ahead": ahead,
+        "error": job.get("error", "") if short["state"] == "failed" else "",
         "made": facts,
-        "outdated": bool(facts and ready.get("xray_at") and facts.get("xray_at") != ready["xray_at"]),
         # own: the audio uploaded for this clinic. all: the one for every video. Without the file paths.
         "audio": {"own": shown(audio_info(clinic["id"])), "all": shown(audio_info(None))},
     }
 
 
 def start(clinic: dict) -> dict:
-    """Start making the video of a clinic, in the background. One video at a time."""
+    """Make the video of a clinic, in the background. If another one is being made, it waits its turn."""
     job = plan(clinic)
     if not job["ready"]:
         raise HTTPException(status_code=409, detail=job["why"])
-    with LOCK:
-        if any(one.get("state") == "working" for one in JOBS.values()):
-            raise HTTPException(status_code=409, detail="Ya se está haciendo un vídeo: espera a que termine.")
-        JOBS[clinic["id"]] = {"state": "working", "progress": 0.0, "say": "Empezando…", "error": ""}
-    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-    job_file = VIDEOS_DIR / f"clinic-{clinic['id']}-job.json"
-    job_file.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
-    threading.Thread(target=follow, args=(clinic["id"], job_file), daemon=True).start()
+    queue([job])
     return status(clinic)
+
+
+def queue(jobs: list[dict]) -> int:
+    """Put videos in the line, each one a ready plan(). A clinic already waiting or being made is not put
+    twice. Returns how many went in. One thread works the line, one video at a time."""
+    with LOCK:
+        taken = {one["clinic_id"] for one in LINE}
+        taken |= {clinic_id for clinic_id, one in JOBS.items() if one.get("state") == "working"}
+        if not taken:  # a new batch: count from zero
+            BATCH.update(total=0, done=0, failed=0)
+        added = 0
+        for job in jobs:
+            if job["clinic_id"] in taken:
+                continue
+            taken.add(job["clinic_id"])
+            LINE.append(job)
+            JOBS[job["clinic_id"]] = {"state": "waiting", "progress": 0.0, "say": "", "error": "", "clinic": job["clinic"]}
+            added += 1
+        BATCH["total"] += added
+        if added and not RUNNING["line"]:
+            RUNNING["line"] = True
+            threading.Thread(target=work_the_line, daemon=True).start()
+    return added
+
+
+def work_the_line() -> None:
+    """Make the videos of the line, the first one first, until it is empty."""
+    while True:
+        with LOCK:
+            if not LINE:
+                RUNNING["line"] = False
+                return
+            job = LINE.popleft()
+            clinic_id = job["clinic_id"]
+            JOBS[clinic_id] = {"state": "working", "progress": 0.0, "say": "Empezando…", "error": "",
+                               "clinic": job["clinic"]}
+        try:
+            VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+            job_file = VIDEOS_DIR / f"clinic-{clinic_id}-job.json"
+            job_file.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+            follow(clinic_id, job_file)
+        except Exception as error:  # one video that fails never stops the others
+            with LOCK:
+                if clinic_id in JOBS:
+                    JOBS[clinic_id].update(state="failed", error=f"{type(error).__name__}: {error}"[:300])
+        with LOCK:
+            BATCH["done" if JOBS.get(clinic_id, {}).get("state") == "done" else "failed"] += 1
+
+
+def stop() -> int:
+    """Empty the line: the video being made now finishes, the waiting ones are not made. Returns how many."""
+    with LOCK:
+        dropped = [job["clinic_id"] for job in LINE]
+        LINE.clear()
+        for clinic_id in dropped:
+            JOBS.pop(clinic_id, None)
+        BATCH["total"] -= len(dropped)
+    return len(dropped)
+
+
+def line() -> dict:
+    """How the line goes, for the list of clinics: the video being made, the ones waiting and the batch."""
+    with LOCK:
+        now = next(({"clinic_id": clinic_id, "clinic": one.get("clinic", ""), "progress": one.get("progress", 0.0),
+                     "say": one.get("say", "")}
+                    for clinic_id, one in JOBS.items() if one.get("state") == "working"), None)
+        waiting = [job["clinic_id"] for job in LINE]
+        batch = dict(BATCH)
+    left = len(waiting) * SECONDS_EACH + ((1 - now["progress"]) * SECONDS_EACH if now else 0)
+    return {"running": bool(now or waiting), "now": now, "waiting": waiting,
+            "minutes_left": round(left / 60) if left else 0, **batch}
 
 
 def follow(clinic_id: int, job_file: Path) -> None:
     """Run this file as its own process and keep JOBS up to date with the lines it prints."""
     def update(**changes) -> None:
         with LOCK:
-            JOBS[clinic_id].update(changes)
+            if clinic_id in JOBS:  # not when the clinic was erased meanwhile
+                JOBS[clinic_id].update(changes)
 
     too_long = threading.Event()
     try:
@@ -373,11 +473,11 @@ def follow(clinic_id: int, job_file: Path) -> None:
         timer = threading.Timer(MAKE_SECONDS, lambda: (too_long.set(), process.kill()))
         timer.start()
         last, other = {}, deque(maxlen=5)
-        for line in process.stdout:
+        for printed in process.stdout:
             try:
-                said = json.loads(line)
+                said = json.loads(printed)
             except ValueError:
-                other.append(line.strip())
+                other.append(printed.strip())
                 continue
             if "progress" in said:
                 update(progress=said["progress"], say=said["say"])
@@ -399,13 +499,17 @@ def follow(clinic_id: int, job_file: Path) -> None:
 
 def forget(clinic_id: int) -> None:
     """Delete everything of a clinic's video, its own audio too. For when the clinic is erased."""
+    with LOCK:
+        kept = [job for job in LINE if job["clinic_id"] != clinic_id]
+        BATCH["total"] -= len(LINE) - len(kept)
+        LINE.clear()
+        LINE.extend(kept)
+        JOBS.pop(clinic_id, None)
     video, facts = files(clinic_id)
     silent = silent_copy(clinic_id)
     for path in (video, facts, silent, part_of(video), part_of(silent), VIDEOS_DIR / f"clinic-{clinic_id}-job.json"):
         path.unlink(missing_ok=True)
     drop_audio(clinic_id)
-    with LOCK:
-        JOBS.pop(clinic_id, None)
 
 
 # ---------- The sound ----------

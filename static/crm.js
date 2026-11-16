@@ -242,6 +242,38 @@ function sayMoment(iso) {
   return shortDay(iso.slice(0, 10)) + " a las " + iso.slice(11, 16);
 }
 
+// ---- The video with the proposal, in the lists ----
+
+// A video usually takes this long on my computer (the same as SECONDS_EACH in video.py).
+const VIDEO_SECONDS = 80;
+
+// The video of a clinic in two or three words, and the tone of its dot. null when it cannot be made yet.
+function videoWords(video) {
+  switch (video.state) {
+    case "working": return { text: "Haciéndose… " + Math.round(video.progress * 100) + " %", tone: "working" };
+    case "waiting": return { text: "En la cola", tone: "waiting" };
+    case "failed": return { text: "Falló", tone: "failed" };
+    case "done": return video.outdated ? { text: "Antiguo", tone: "old" } : { text: "Listo", tone: "done" };
+    default: return video.ready ? { text: "Sin hacer", tone: "none" } : null;
+  }
+}
+
+// "Vídeo: listo", with its dot. A finished video is a link to it, on the clinic's card.
+function videoTag(clinic, prefix) {
+  const words = videoWords(clinic.video);
+  if (!words) return null;
+  const text = prefix ? prefix + words.text.toLowerCase() : words.text;
+  return clinic.video.state === "done"
+    ? link(text, "/crm/clinics/" + clinic.id + "#video", "video-tag " + words.tone)
+    : el("span", "video-tag " + words.tone, text);
+}
+
+// "unos 25 min": how long a number of videos takes.
+function videoMinutes(count) {
+  const minutes = Math.max(1, Math.round(count * VIDEO_SECONDS / 60));
+  return minutes === 1 ? "1 min" : "unos " + minutes + " min";
+}
+
 function stagePill(clinic) {
   return el("span", "pill " + clinic.stage, STAGES[clinic.stage] || clinic.stage);
 }

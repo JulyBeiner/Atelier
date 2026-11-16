@@ -200,6 +200,11 @@ def as_clinic(row) -> dict:
     return clinic
 
 
+def with_video(clinic: dict) -> dict:
+    """The clinic with its video in a few words, for the lists: whether it has one, or why not yet."""
+    return clinic | {"video": video.summary(clinic)}
+
+
 def as_person(row) -> dict:
     person = dict(row)
     person["decides"] = bool(person["decides"])
@@ -258,10 +263,11 @@ def clear_next_step(connection, clinic_id: int) -> None:
 
 @router.get("/clinics")
 def list_clinics():
-    """Every clinic. There are few enough for the page to search and filter them by itself."""
+    """Every clinic, each with its video in a few words. There are few enough for the page to search and
+    filter them by itself."""
     with get_connection() as connection:
         rows = connection.execute(CLINIC_QUERY + " ORDER BY clinics.name COLLATE NOCASE").fetchall()
-    return [as_clinic(row) for row in rows]
+    return [with_video(as_clinic(row)) for row in rows]
 
 
 @router.post("/clinics", status_code=201)
@@ -415,11 +421,45 @@ def video_state(clinic_id: int):
 def make_video(clinic_id: int):
     """Make the clinic's video: a minute with what I saw, a prototype and an invitation to a call. Free: no API.
 
-    It takes a minute or two and runs in the background: the card follows it by asking again.
+    It takes a minute or two and runs in the background: the card follows it by asking again. If another
+    video is being made, this one waits its turn.
     """
     with get_connection() as connection:
         clinic = fetch_clinic(connection, clinic_id)
     return video.start(clinic)
+
+
+@router.get("/videos")
+def video_line():
+    """How the line of videos goes: the one being made and how far it is, the ones waiting, and the batch."""
+    return video.line()
+
+
+@router.post("/videos", status_code=202)
+def make_missing_videos():
+    """Make, one after another, every video that is missing. Free: no API.
+
+    It takes the clinics I may still write a first message to whose video can be made and that have none,
+    an old one (the X-ray is newer) or one that failed. The ones that fit me best go first, as in "Hoy".
+    About a minute and a half each, in the background: it goes on with the page closed, not if the panel stops.
+    """
+    with get_connection() as connection:
+        rows = connection.execute(
+            CLINIC_QUERY + " ORDER BY fit DESC, kind = 'chain', clinics.id").fetchall()
+    jobs = []
+    for clinic in (as_clinic(row) for row in rows):
+        job = video.plan(clinic)
+        if video.summary(clinic, job)["wanted"]:
+            jobs.append(job)
+    video.queue(jobs)
+    return video.line()
+
+
+@router.delete("/videos")
+def stop_videos():
+    """Stop the line: the video being made now finishes, the waiting ones are not made."""
+    video.stop()
+    return video.line()
 
 
 @router.get("/clinics/{clinic_id}/video.mp4")
@@ -540,7 +580,7 @@ def today():
     with get_connection() as connection:
         def clinics(where: str, values: tuple = ()) -> list[dict]:
             rows = connection.execute(CLINIC_QUERY + " WHERE do_not_contact = 0 AND " + where, values).fetchall()
-            return [as_clinic(row) for row in rows]
+            return [with_video(as_clinic(row)) for row in rows]
 
         def count(query: str, values: tuple = ()) -> int:
             return connection.execute(query, values).fetchone()[0]

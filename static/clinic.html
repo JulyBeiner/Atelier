@@ -576,10 +576,11 @@ let videoTimer = null;
 function renderVideo() {
   const video = clinic.video;
   const working = video.state === "working";
+  const waiting = video.state === "waiting";
   const button = $("video-button");
   button.hidden = !video.ready;
-  button.disabled = working;
-  button.textContent = working ? "Haciendo el vídeo…" : video.made ? "Hacerlo otra vez" : "Hacer el vídeo";
+  button.disabled = working || waiting;
+  button.textContent = working ? "Haciendo el vídeo…" : waiting ? "En la cola…" : video.made ? "Hacerlo otra vez" : "Hacer el vídeo";
 
   const parts = [];
   if (!video.ready) {
@@ -593,6 +594,13 @@ function renderVideo() {
     meter.append(fill);
     parts.push(el("p", "video-doing", (video.say || "Haciendo el vídeo…") + " " + Math.round(video.progress * 100) + " %"), meter,
       el("p", "sub", "Tarda uno o dos minutos. Puedes seguir con otra cosa: el vídeo se queda aquí."));
+  } else if (waiting) {
+    // Another video is being made: this one goes after it (and after the ones before it in the line).
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "en la cola"), el("p", "", (video.ahead === 1
+      ? "Hay 1 vídeo antes que este." : "Hay " + video.ahead + " vídeos antes que este.")
+      + " Se hará solo: puedes cerrar la página mientras el panel esté encendido."));
+    parts.push(block);
   } else if (!video.made && video.state !== "failed") {
     const block = el("div", "empty-block");
     block.append(el("span", "note", "sin vídeo"),
@@ -601,7 +609,7 @@ function renderVideo() {
   }
   if (video.state === "failed") parts.push(el("p", "draft-warning", "No he podido hacer el vídeo. " + video.error));
 
-  if (video.made && !working) {
+  if (video.made && !working && !waiting) {
     const made = video.made;
     const player = el("video", "video-player");
     player.controls = true;
@@ -637,7 +645,7 @@ function renderVideo() {
   $("video-box").replaceChildren(...parts);
 
   clearTimeout(videoTimer);
-  if (working) videoTimer = setTimeout(followVideo, 1500);
+  if (working || waiting) videoTimer = setTimeout(followVideo, waiting ? 3000 : 1500);
 }
 
 // While the video is being made, ask how it goes. When it finishes, the message below learns it has a video.
@@ -645,10 +653,10 @@ async function followVideo() {
   try {
     const before = clinic.video.state;
     clinic.video = await api("/api/crm/clinics/" + clinicId + "/video");
-    if (before === "working" && clinic.video.state === "done") flash("Vídeo hecho. Míralo antes de enviarlo.");
+    if (["working", "waiting"].includes(before) && clinic.video.state === "done") flash("Vídeo hecho. Míralo antes de enviarlo.");
   } catch (error) { showError(error.message); }
   renderVideo();
-  if (clinic.video.state !== "working") {
+  if (!["working", "waiting"].includes(clinic.video.state)) {
     renderAudio();
     if (!$("draft").contains(document.activeElement)) renderDraft();
   }
@@ -904,7 +912,7 @@ askTwice($("delete"), "Sí, borrar para siempre", async () => {
 });
 
 $("p-prefers").append(option("", "No lo sé"), ...Object.keys(CHANNELS).map((channel) => option(channel, CHANNELS[channel])));
-load(true).then(() => { if (location.hash === "#mensaje") $("mensaje").scrollIntoView(); });
+load(true).then(() => { if (["#mensaje", "#video"].includes(location.hash)) $(location.hash.slice(1)).scrollIntoView(); });
 </script>
 </body>
 </html>

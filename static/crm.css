@@ -197,6 +197,23 @@ table.clinics { width: 100%; border-collapse: collapse; }
   .clinics td.blank { display: none; }
 }
 
+/* The video of each clinic in the lists (a dot colored like its state) and the line that makes them */
+.video-tag { display: inline-flex; align-items: center; gap: 7px; color: var(--soft); white-space: nowrap; }
+.video-tag::before {
+  content: ""; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--olive); box-sizing: border-box; flex: none;
+}
+.video-tag.done::before { background: var(--olive-deep); border-color: var(--olive-deep); }
+.video-tag.working::before { background: var(--olive); }
+.video-tag.waiting::before { border-style: dashed; }
+.video-tag.old::before, .video-tag.failed::before { background: var(--coral); border-color: var(--coral); }
+a.video-tag { color: var(--olive-deep); font-weight: 500; text-decoration: none; }
+a.video-tag:hover { text-decoration: underline; text-decoration-thickness: 1px; }
+.video-line { background: var(--sage); border-radius: var(--radius); padding: 20px 24px; margin: -6px 0 26px; }
+.video-line .video-doing { margin: 0 0 10px; }
+.video-line .meter { max-width: none; background: rgba(253, 251, 247, 0.7); }
+.video-line-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.video-line-foot .sub { margin: 0; color: var(--soft); }
+
 /* The card of one clinic */
 .reach-line { display: flex; gap: 6px 20px; flex-wrap: wrap; margin-top: 18px; font-size: 15px; }
 .reach-line span { color: var(--muted); }
