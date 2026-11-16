@@ -30,6 +30,8 @@ The candidates wait in the panel. I mark the ones that inspire me and what I lik
 
 - "Hoy" opens the day: the follow-ups I let slip, today's, the conversations with no next step, and the next clinics to write to
 - the list of clinics, with search and filters by neighbourhood, kind, stage and batch
+- a board with one column per stage: dragging a clinic to another column moves it, and the change is noted in its history
+- my numbers, worked out from the history: how many clinics have ever got to each stage, and what happened week by week
 - one card per clinic: its details, the people in it (who decides and how they like to be reached), its star treatments, its Google reviews and how well it fits me
 - a history of every contact. Noting a contact moves the clinic along the path by itself: to contact, contacted, replied, call booked, call done, proposal sent, client
 - always a next step with a day. After a diagnosis call the written proposal is set for the next day, as in my method

@@ -608,6 +608,60 @@ def today():
         }
 
 
+# ---- My numbers ----
+
+# What I count each week: a contact I noted, or a clinic I moved to that stage by hand on the board.
+# The words on screen are in crm.html, under the same keys.
+COUNTED = {
+    "written": "(kind IN ('message_sent', 'audit_sent') OR stage_to = 'contacted')",
+    "replies": "(kind = 'reply' OR stage_to = 'replied')",
+    "calls_booked": "(kind = 'call_booked' OR stage_to = 'call_booked')",
+    "calls": "(kind = 'call' OR stage_to = 'call_done')",
+    "proposals": "(kind = 'proposal_sent' OR stage_to = 'proposal_sent')",
+    "clients": "stage_to = 'client'",
+}
+WEEKS = 6
+
+
+@router.get("/numbers")
+def numbers():
+    """My numbers, from the history of contacts.
+
+    funnel: how many clinics have ever got to each stage of the path, even if they later left it (a clinic
+    that replied and then said no still counts as contacted and as replied). now: where the clinics are
+    today. weeks: what happened in each of the last weeks, Monday to Sunday, the newest first; each figure
+    counts clinics, not messages (two messages to one clinic in a week count once).
+    """
+    day = date.today()
+    monday = day - timedelta(days=day.weekday())
+    with get_connection() as connection:
+        clinics = connection.execute("SELECT id, stage FROM clinics").fetchall()
+        history = connection.execute("SELECT clinic_id, kind, stage_to FROM clinic_history").fetchall()
+        weeks = []
+        for back in range(WEEKS):
+            start = monday - timedelta(days=7 * back)
+            end = start + timedelta(days=6)
+            week = {"from": start.isoformat(), "to": end.isoformat()}
+            for name, where in COUNTED.items():
+                week[name] = connection.execute(
+                    f"SELECT COUNT(DISTINCT clinic_id) FROM clinic_history WHERE {where} AND happened_on BETWEEN ? AND ?",
+                    (week["from"], week["to"])).fetchone()[0]
+            weeks.append(week)
+
+    # The furthest each clinic has ever been along the path.
+    furthest = {row["id"]: PATH.index(row["stage"]) if row["stage"] in PATH else 0 for row in clinics}
+    for entry in history:
+        reached = entry["stage_to"] or MOVES_TO.get(entry["kind"], "")
+        if reached in PATH and entry["clinic_id"] in furthest:
+            furthest[entry["clinic_id"]] = max(furthest[entry["clinic_id"]], PATH.index(reached))
+    funnel = [{"stage": stage, "clinics": sum(1 for far in furthest.values() if far >= index)}
+              for index, stage in enumerate(PATH)]
+    now = {stage: 0 for stage in Stage.__args__}
+    for row in clinics:
+        now[row["stage"]] += 1
+    return {"today": day.isoformat(), "funnel": funnel, "now": now, "weeks": weeks}
+
+
 # ---- Import ----
 
 def waiting_clinics() -> tuple[list[Path], list[ClinicImport]]:

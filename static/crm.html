@@ -18,6 +18,8 @@
       <nav class="tabs" aria-label="Partes del CRM">
         <a href="#hoy" id="tab-hoy">Hoy</a>
         <a href="#clinicas" id="tab-clinicas">Clínicas</a>
+        <a href="#tablero" id="tab-tablero">Tablero</a>
+        <a href="#numeros" id="tab-numeros">Números</a>
       </nav>
     </div>
     <div class="brand">
@@ -163,6 +165,43 @@
     </section>
   </main>
 
+  <!-- Tablero: every clinic in the column of its stage. Dragging one moves it. -->
+  <main id="view-tablero" hidden>
+    <header class="opening">
+      <p class="whose">CRM de clínicas</p>
+      <h1 id="board-headline">Cargando…</h1>
+      <p class="lede">Arrastra una clínica a otra columna para cambiarla de etapa, o usa «Mover a…» en su tarjeta. El cambio queda apuntado en su historial.</p>
+    </header>
+    <section aria-label="Tablero de etapas">
+      <div class="board" id="board"></div>
+      <div class="off-board" id="off-board"></div>
+    </section>
+  </main>
+
+  <!-- Números: what the history of contacts adds up to -->
+  <main id="view-numeros" hidden>
+    <header class="opening">
+      <p class="whose">CRM de clínicas</p>
+      <h1 id="numbers-headline">Cargando…</h1>
+      <p class="lede" id="numbers-lede"></p>
+    </header>
+    <section aria-labelledby="funnel-title">
+      <h2 id="funnel-title">Hasta dónde han llegado</h2>
+      <p class="section-note">Cuántas clínicas han pasado alguna vez por cada etapa, aunque luego se quedaran por el camino. El porcentaje compara cada etapa con la anterior.</p>
+      <div class="funnel" id="funnel"></div>
+    </section>
+    <section aria-labelledby="weeks-title">
+      <h2 id="weeks-title">Semana a semana</h2>
+      <p class="section-note">De lunes a domingo. Cada número cuenta clínicas, no mensajes: dos mensajes a la misma clínica en una semana cuentan una vez.</p>
+      <div class="table-wrap">
+        <table class="weeks">
+          <thead><tr><th>Semana</th><th>Escritas</th><th>Respuestas</th><th>Llamadas agendadas</th><th>Llamadas hechas</th><th>Propuestas</th><th>Clientes</th></tr></thead>
+          <tbody id="weeks"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
 </div>
 <div id="flash" role="status"></div>
 
@@ -174,14 +213,16 @@ let sort = { key: "name", up: true };
 
 // ---- The two views: #hoy and #clinicas ----
 
+const VIEWS = { hoy: "Hoy", clinicas: "Clínicas", tablero: "Tablero", numeros: "Números" };
+
 function showView() {
-  const list = location.hash === "#clinicas";
-  $("view-hoy").hidden = list;
-  $("view-clinicas").hidden = !list;
-  $("tab-hoy").removeAttribute("aria-current");
-  $("tab-clinicas").removeAttribute("aria-current");
-  $(list ? "tab-clinicas" : "tab-hoy").setAttribute("aria-current", "page");
-  document.title = (list ? "Clínicas" : "Hoy") + " | CRM | Atelier";
+  const now = location.hash.slice(1) in VIEWS ? location.hash.slice(1) : "hoy";
+  Object.keys(VIEWS).forEach((view) => {
+    $("view-" + view).hidden = view !== now;
+    if (view === now) $("tab-" + view).setAttribute("aria-current", "page");
+    else $("tab-" + view).removeAttribute("aria-current");
+  });
+  document.title = VIEWS[now] + " | CRM | Atelier";
 }
 
 // ---- Hoy ----
@@ -532,6 +573,125 @@ $("xray-all").addEventListener("click", async () => {
   await refresh();
 });
 
+// ---- Tablero ----
+
+// The two ways off the path sit under the board.
+const OFF_PATH = ["later", "not_interested"];
+// A long column shows its first clinics; the rest are in the list.
+const COLUMN_MAX = 15;
+
+// Within a column: first what has a day (the soonest first), then the clinics that fit me best.
+function boardOrder(a, b) {
+  if (a.next_step_on !== b.next_step_on) {
+    if (!a.next_step_on) return 1;
+    if (!b.next_step_on) return -1;
+    return a.next_step_on < b.next_step_on ? -1 : 1;
+  }
+  return (b.fit || 0) - (a.fit || 0) || a.name.localeCompare(b.name, "es");
+}
+
+function moveClinic(clinic, stage) {
+  if (!stage || stage === clinic.stage) return;
+  act(() => send("POST", "/api/crm/clinics/" + clinic.id + "/stage", { stage }), refresh,
+    clinic.name + " pasa a «" + STAGES[stage] + "».");
+}
+
+function boardChip(clinic) {
+  const chip = el("div", "chip");
+  chip.draggable = true;
+  chip.append(link(clinic.name, "/crm/clinics/" + clinic.id));
+  if (clinic.next_step_on) {
+    const late = clinic.next_step_on < today;
+    chip.append(el("div", "sub", clinic.next_step),
+      el("span", "when sub" + (late ? " late" : ""), sayDay(clinic.next_step_on, today)));
+  } else if (clinic.area) {
+    chip.append(el("div", "sub", clinic.area));
+  }
+  const foot = el("div", "chip-foot");
+  const move = el("select");
+  move.setAttribute("aria-label", "Mover " + clinic.name + " a otra etapa");
+  move.append(option("", "Mover a…"), ...Object.keys(STAGES).filter((stage) => stage !== clinic.stage)
+    .map((stage) => option(stage, STAGES[stage])));
+  move.onchange = () => moveClinic(clinic, move.value);
+  foot.append(videoTag(clinic) || el("span"), move);
+  chip.append(foot);
+  chip.addEventListener("dragstart", (event) => {
+    event.dataTransfer.setData("text/plain", String(clinic.id));
+    event.dataTransfer.effectAllowed = "move";
+    chip.classList.add("dragging");
+  });
+  chip.addEventListener("dragend", () => chip.classList.remove("dragging"));
+  return chip;
+}
+
+function boardColumn(stage) {
+  const inside = clinics.filter((clinic) => clinic.stage === stage).sort(boardOrder);
+  const column = el("div", "column");
+  const title = el("h3", "", STAGES[stage]);
+  title.append(el("span", "", String(inside.length)));
+  const cards = el("div", "column-cards");
+  cards.append(...inside.slice(0, COLUMN_MAX).map(boardChip));
+  column.append(title, cards);
+  if (inside.length > COLUMN_MAX) {
+    column.append(el("p", "more", "Y " + (inside.length - COLUMN_MAX) + " más, en «Clínicas»."));
+  }
+  column.addEventListener("dragover", (event) => { event.preventDefault(); column.classList.add("over"); });
+  column.addEventListener("dragleave", (event) => { if (!column.contains(event.relatedTarget)) column.classList.remove("over"); });
+  column.addEventListener("drop", (event) => {
+    event.preventDefault();
+    column.classList.remove("over");
+    const clinic = clinics.find((one) => String(one.id) === event.dataTransfer.getData("text/plain"));
+    if (clinic) moveClinic(clinic, stage);
+  });
+  return column;
+}
+
+function renderBoard() {
+  $("board").replaceChildren(...PATH.map(boardColumn));
+  $("off-board").replaceChildren(...OFF_PATH.map(boardColumn));
+  const talking = clinics.filter((clinic) => PATH.indexOf(clinic.stage) > 0 && clinic.stage !== "client").length;
+  $("board-headline").replaceChildren(...(talking
+    ? [talking === 1 ? "1 conversación en " : talking + " conversaciones en ", el("em", "", "marcha"), "."]
+    : ["Todavía no hay conversaciones en ", el("em", "", "marcha"), "."]));
+}
+
+// ---- Números ----
+
+const WEEK_COLUMNS = ["written", "replies", "calls_booked", "calls", "proposals", "clients"];
+
+function renderNumbers(data) {
+  const funnel = data.funnel;
+  const total = funnel[0].clinics;
+  const contacted = funnel[1].clinics, replied = funnel[2].clinics;
+  $("numbers-headline").replaceChildren(...(contacted
+    ? ["Has escrito a ", el("em", "", contacted === 1 ? "1 clínica" : contacted + " clínicas"), "."]
+    : ["Todavía no has escrito a ", el("em", "", "ninguna"), "."]));
+  $("numbers-lede").textContent = contacted
+    ? (replied === 1 ? "Te ha respondido 1" : "Te han respondido " + replied) + " (" + Math.round(replied / contacted * 100)
+      + " %). Con pocas clínicas, los porcentajes se mueven mucho: míralos cuando lleves unas veinte."
+    : "Los números salen solos de los contactos que apuntas. Cuando escribas a la primera clínica, apunta el contacto.";
+  $("funnel").replaceChildren(...funnel.map((step, index) => {
+    const row = el("div", "funnel-row");
+    const bar = el("div", "funnel-bar");
+    const fill = el("i");
+    fill.style.width = (total ? step.clinics / total * 100 : 0) + "%";
+    if (step.clinics) bar.append(fill);
+    const figure = el("div");
+    figure.append(el("b", "", String(step.clinics)));
+    const before = index ? funnel[index - 1].clinics : 0;
+    if (index && before) figure.append(el("span", "sub", Math.round(step.clinics / before * 100) + " % de la anterior"));
+    row.append(el("div", "", index ? STAGES[step.stage] : "En tu lista"), bar, figure);
+    return row;
+  }));
+  $("weeks").replaceChildren(...data.weeks.map((week, index) => {
+    const row = el("tr");
+    row.append(el("td", "", index === 0 ? "Esta semana" : index === 1 ? "La semana pasada"
+      : shortDay(week.from) + " – " + shortDay(week.to)));
+    WEEK_COLUMNS.forEach((name) => row.append(el("td", week[name] ? "" : "zero", String(week[name]))));
+    return row;
+  }));
+}
+
 // ---- The videos of all the clinics, one after another ----
 // The line lives in the panel: it goes on with this page closed. Here I only start it, follow it and stop it.
 
@@ -656,10 +816,13 @@ document.querySelectorAll(".clinics th[data-sort] button").forEach((button) => {
 
 async function refresh() {
   try {
-    const [data, list, line] = await Promise.all([api("/api/crm/today"), api("/api/crm/clinics"), api("/api/crm/videos")]);
+    const [data, list, line, figures] = await Promise.all([api("/api/crm/today"), api("/api/crm/clinics"),
+      api("/api/crm/videos"), api("/api/crm/numbers")]);
     clinics = list;
     videoLine = line;
     renderToday(data);
+    renderBoard();
+    renderNumbers(figures);
     fillFilters();
     restoreFilters();
     renderList();
