@@ -169,6 +169,19 @@ p { margin: 0; }
 .tile:nth-child(3n+1) { background: var(--peach); }
 .tile:nth-child(3n+2) { background: var(--sage); }
 .tile:nth-child(3n) { background: var(--chat); }
+
+/* The speed of their website: Google's score today next to the goal, and what slows it down */
+.gauges { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.gauge { flex: 1; text-align: center; }
+.gauge-ring { position: relative; width: 68px; height: 68px; margin: 0 auto; border-radius: 50%; background: var(--sage); }
+.gauge-ring::after { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: var(--cream); }
+.gauge-ring b { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; font-family: var(--serif); font-weight: 400; font-size: 24px; }
+.gauge-label { margin-top: 6px; font-size: 10.5px; font-weight: 600; color: var(--soft); }
+.brakes-title { margin-top: 16px; font-family: var(--hand); font-weight: 600; font-size: 17px; line-height: 1; color: var(--olive-deep); }
+.brake { display: flex; align-items: baseline; gap: 7px; margin-top: 9px; font-size: 10.5px; line-height: 1.25; }
+.brake i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); transform: translateY(-1px); }
+.brake span { flex: 1; }
+.brake b { flex: none; font-weight: 600; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -243,7 +256,12 @@ const SHAPES = {
   },
   tap: (p) => ({ opacity: 0.7 * (1 - p), transform: `scale(${0.3 + 1.3 * p})` }),
   pick: (p) => ({ backgroundColor: mix("#ffffff", "#5e6440", p), color: mix("#5e6440", "#fbf6ef", p) }),
+  solve: (p) => ({ backgroundColor: mix("#efa48c", "#5e6440", p) }),
 };
+// A ring that fills clockwise up to a score out of 100, in one color. One shape per ring.
+const ringShape = (score, color) => (p) => ({
+  backgroundImage: `conic-gradient(${color} ${Math.min(score, 100) * 3.6 * p}deg, #DCDDC4 0deg)`,
+});
 
 // Easing curves, as in CSS: cubic-bezier(x1, y1, x2, y2).
 const CURVES = { ease: [0.25, 0.1, 0.25, 1], "ease-in-out": [0.42, 0, 0.58, 1], "ease-out": [0, 0, 0.58, 1], linear: null };
@@ -266,12 +284,13 @@ function curve(spec) {
 }
 
 const moves = [];
-// One move of one element: its shape, when it starts and how long it lasts, in seconds.
+// One move of one element: its shape (a name in SHAPES, or a shape made for it), when it starts and how
+// long it lasts, in seconds.
 // fill says what it shows outside that time, as in CSS: "both", "forwards" (after) or "none".
 // count repeats it. When two moves change the same thing at once, the later one wins.
 function play(node, name, at, seconds, { easing = EASE, fill = "both", count = 1 } = {}) {
-  moves.push({ node, shape: SHAPES[name], at, seconds, count, fill, ease: curve(easing),
-               changes: Object.keys(SHAPES[name](0)) });
+  const shape = typeof name === "function" ? name : SHAPES[name];
+  moves.push({ node, shape, at, seconds, count, fill, ease: curve(easing), changes: Object.keys(shape(0)) });
   return node;
 }
 
@@ -355,7 +374,7 @@ seen.append(header(V.seen.kicker, V.seen.sub, T.seen + 0.1),
   play(phone("site-phone", "10:24", false, site), "lift", T.seen + 0.2, 0.9),
   play(fact, "rise", T.seen + 2.4, 0.8));
 
-// ---- 3. The prototype. Its kind decides what the phone shows: booking, review, sources or posts ----
+// ---- 3. The prototype. Its kind decides what the phone shows: booking, review, sources, posts or speed ----
 const P = V.proto;
 const S = T.proto;
 
@@ -461,6 +480,33 @@ function postsPanel() {
   return panel;
 }
 
+// The speed of their website on a phone: Google's score today, what slows it down, and the goal.
+// The numbers are the ones Google measured. The brakes turn olive as the goal ring fills.
+function gauge(mark, color, at) {
+  const box = el("div", "gauge");
+  const ring = el("div", "gauge-ring");
+  ring.append(play(el("b", "", mark.text), "appear", at + 0.5, 0.6, { easing: "ease" }));
+  box.append(play(ring, ringShape(mark.score, color), at, 1.2, { easing: "ease-in-out" }), el("p", "gauge-label", mark.label));
+  return play(box, "appear", at - 0.3, 0.4, { easing: "ease" });
+}
+
+function speedPanel() {
+  const panel = el("div", "panel");
+  const gauges = el("div", "gauges");
+  gauges.append(gauge(P.today, "#EFA48C", S + 1.9), gauge(P.goal, "#5E6440", S + 7.6));
+  panel.append(play(el("h3", "", P.title), "rise", S + 1.0, 0.6),
+    play(el("p", "note", P.note), "appear", S + 1.2, 0.6, { easing: "ease" }),
+    gauges, play(el("p", "brakes-title", P.brakes_title), "rise", S + 3.6, 0.6));
+  P.brakes.forEach(([name, value], index) => {
+    const row = el("div", "brake");
+    row.append(play(el("i"), "solve", S + 8.0 + index * 0.35, 0.5, { easing: "ease" }), el("span", "", name));
+    if (value) row.append(el("b", "", value));
+    panel.append(play(row, "rise", S + 4.2 + index * 0.8, 0.6));
+  });
+  panel.append(play(el("p", "total", P.total), "rise", S + 9.4, 0.7));
+  return panel;
+}
+
 const SCREENS = {
   // A patient writes at night and the clinic's WhatsApp books her by itself.
   booking: () => phone("chat-phone", P.clock, true, chatScreen([
@@ -480,6 +526,7 @@ const SCREENS = {
   ])),
   sources: () => phone("panel-phone", P.clock, false, sourcesPanel()),
   posts: () => phone("panel-phone", P.clock, false, postsPanel()),
+  speed: () => phone("panel-phone", P.clock, false, speedPanel()),
 };
 
 const proto = scene("proto", S, T.includes);

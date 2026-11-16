@@ -11,8 +11,11 @@ The prototype depends on the biggest hole of the quick X-ray:
   itself, with the clinic's name and one of its treatments;
 - marketing: the message that asks a patient for her Google review (few or low reviews), the panel that
   says where patients come from (nothing measures the visits), or a month of posts waiting for a yes (no
-  Instagram on the website). Every number in those is an example, and the video says so.
-Web comes next: its prototype is a new homepage made by the Web agent, which costs API.
+  Instagram on the website). Every number in those is an example, and the video says so;
+- a website that is slow on a phone: the score Google PageSpeed gave it in the X-ray next to the goal
+  (90, where Google starts calling a page fast) and what slows it down today. Those numbers are real.
+The other holes of a website come next: their prototype is a new homepage made by the Web agent, which
+costs API.
 
 How it is made: plan() writes the words from the X-ray (instant). Then this file runs as its own process,
 like capture.py, so the browser never blocks the panel: it opens the clinic's homepage on a phone, fills
@@ -73,13 +76,27 @@ AUDIO_MAX_BYTES = 40 * 1024 * 1024
 FADE_SECONDS = 1.5
 NO_FFMPEG = "Falta ffmpeg. Escribe en la terminal: pip install imageio-ffmpeg"
 
-# The angles that already have their prototype.
+# The angles that already have their prototype. Of the web angle, only the holes in PROTOTYPES have one.
 READY_ANGLES = {"automation", "marketing"}
 # Why a clinic has no video yet, in the list of clinics, for the holes that need me to look at its website.
 NOT_READY_SHORT = {"no_web": "Falta su web", "web_down": "Su web no abrió", "web_blocked": "No pude leer su web"}
 # The prototype each hole gets. Every other hole of a ready angle gets "booking".
 PROTOTYPES = {"low_rating": "review", "fair_rating": "review", "few_reviews": "review", "some_reviews": "review",
-              "no_tracking": "sources", "no_instagram": "posts"}
+              "no_tracking": "sources", "no_instagram": "posts", "slow_mobile": "speed", "fair_mobile": "speed"}
+SPEED_GOAL = 90  # from this score on, Google PageSpeed calls a page fast
+# What slows a website down, in a clinic's words, and how to spot it among the audits Google says the page
+# fails (in Spanish, lowercase and without accents). In this order; the video shows the first three found.
+# The unit is what the audit's number measures: "size" (the KiB it would save), "time" or nothing.
+BRAKES = [
+    ("Imágenes que pesan de más", r"entrega de imagenes|imagenes", "size"),
+    ("Archivos que retrasan el arranque", r"bloquean el renderizado", "time"),
+    ("Demasiado trabajo para un móvil", r"hilo principal|tiempo de ejecucion de javascript", "time"),
+    ("Código que no se usa", r"que no se use|javascript antiguo|javascript duplicado|minifica", "size"),
+    ("La página se mueve al cargar", r"cambios de diseno", ""),
+    ("Lo principal aparece tarde", r"\blcp\b", ""),
+    ("No guarda nada entre visitas", r"cache", ""),
+]
+SMALL_KIB = 50  # savings smaller than this are not worth a line in a video
 # What the proposal would include, for the prototypes that do not depend on the clinic. Never a price.
 POINTS = {
     "review": ["Un mensaje a cada paciente después de su cita, pidiendo la reseña.",
@@ -91,12 +108,16 @@ POINTS = {
     "posts": ["Vuestro Instagram enlazado desde la web, a un toque.",
               "Un mes de publicaciones preparado, con vuestro estilo.",
               "Vosotras aprobáis: nada se publica sin vuestro sí."],
+    "speed": ["Imágenes y código más ligeros, sin cambiar vuestro diseño.",
+              f"Objetivo: {SPEED_GOAL} o más en el test de Google para móvil.",
+              "La medición de antes y la de después, para que veáis el cambio."],
 }
 INTROS = {
     "booking": "Lo que he visto en vuestra web y una idea para que no se os escape ninguna cita.",
     "review": "Lo que he visto de vuestra clínica en Google y una idea para conseguir más reseñas.",
     "sources": "Lo que he visto en vuestra web y una idea para saber qué os trae pacientes.",
     "posts": "Lo que he visto en vuestra web y una idea para que vuestro Instagram trabaje más.",
+    "speed": "Lo que he visto en vuestra web y una idea para que abra rápido en el móvil.",
 }
 
 # Treatments a patient could ask for on WhatsApp, in the words she would use, and how to spot them on a
@@ -157,6 +178,9 @@ def what_i_saw(clinic: dict, key: str) -> tuple[str, str]:
                 "Quien os encuentra desde el móvil tiene que copiarlo a mano.")
     if key == "no_tracking":
         return "Vuestra web no mide sus visitas.", "Así no hay forma de saber qué canal os trae pacientes."
+    if key in ("slow_mobile", "fair_mobile"):
+        return (f"En el móvil, Google le da un {speed_score(clinic)} sobre 100 en velocidad.",
+                f"Es su test PageSpeed: a partir de {SPEED_GOAL}, Google considera que una web es rápida.")
     if key == "no_instagram":
         return ("Vuestra web no enlaza a ningún Instagram.",
                 "En una clínica estética, es donde más se ve vuestro trabajo.")
@@ -167,6 +191,49 @@ def what_i_saw(clinic: dict, key: str) -> tuple[str, str]:
         return f"En Google tenéis {reviews} reseñas.", "Con más reseñas recientes, más pacientes se deciden."
     return ("Vuestra web está muy cuidada.",
             "Donde suelen perderse citas es después: en lo que se tarda en contestar.")
+
+
+def speed_score(clinic: dict) -> int | None:
+    """The speed score Google PageSpeed gave the clinic's website on a phone, in the X-ray. From 0 to 100."""
+    mobile = (clinic.get("xray_scan") or {}).get("mobile") or {}
+    score = (mobile.get("scores") or {}).get("speed")
+    return score if isinstance(score, int) else None
+
+
+def brakes(clinic: dict) -> list[list[str]]:
+    """What slows the clinic's website down on a phone: up to three, each with its name in plain words and
+    its number ("1,2 MB", "1,8 s" or ""). Only what Google measured in the X-ray; nothing is made up."""
+    mobile = (clinic.get("xray_scan") or {}).get("mobile") or {}
+    failing = [clinic_web.plain(title) for title in (mobile.get("problems") or {}).get("speed") or []]
+    found = []
+    for name, pattern, unit in BRAKES:
+        titles = [title for title in failing if re.search(pattern, title)]
+        failing = [title for title in failing if title not in titles]  # each audit counts for one brake
+        if not titles:
+            continue
+        value = ""
+        if unit == "size":
+            kib = sum(amount(title, "kib") for title in titles)
+            if kib < SMALL_KIB:
+                continue
+            value = f"{number(kib / 1024)} MB" if kib >= 1024 else f"{round(kib)} KB"
+        elif unit == "time":
+            seconds = max(amount(title, "s") or amount(title, "ms") / 1000 for title in titles)
+            value = f"{number(seconds)} s" if seconds else ""
+        found.append([name, value])
+    return found[:3] or [["Lo principal aparece tarde", ""]]
+
+
+def amount(title: str, unit: str) -> float:
+    """The number an audit's title gives in that unit, as Google writes it in Spanish: "(Ahorro estimado
+    de 1.179 KiB)" → 1179.0. 0 when it gives none."""
+    found = re.search(r"(\d[\d.,]*) ?" + unit + r"\b", title)
+    if not found:
+        return 0.0
+    try:
+        return float(found.group(1).rstrip(".,").replace(".", "").replace(",", "."))
+    except ValueError:
+        return 0.0
 
 
 def treatment_in(text: str) -> str:
@@ -200,7 +267,7 @@ def plan(clinic: dict) -> dict:
 
     ready is False when the X-ray is missing, unsure, or its hole has no prototype yet; why says what to do,
     and short says it in two or three words, for the list of clinics.
-    kind is the prototype: booking, review, sources or posts.
+    kind is the prototype: booking, review, sources, posts or speed.
     """
     xray = clinic.get("xray")
     if not xray:
@@ -211,10 +278,10 @@ def plan(clinic: dict) -> dict:
     if key in outreach.NOT_READY:
         return {"ready": False, "short": NOT_READY_SHORT.get(key, "Mira su web"), "why": outreach.NOT_READY[key]}
     angle = outreach.angle_of(key)
-    if angle not in READY_ANGLES:
+    if angle not in READY_ANGLES and (key not in PROTOTYPES or speed_score(clinic) is None):
         return {"ready": False, "angle": angle, "short": "Agujero de web: más adelante",
-                "why": f"Su agujero es de {outreach.ANGLES[angle]}, y ese vídeo llega en el siguiente paso de Atelier."
-                       " De momento están los de automatizaciones y los de marketing."}
+                "why": f"Su agujero es de {outreach.ANGLES[angle]} («{hole['label']}»), y ese vídeo llega más adelante."
+                       " De momento están los de automatizaciones, los de marketing y los de una web lenta en el móvil."}
     url = tidy_url((clinic.get("xray_scan") or {}).get("url") or clinic.get("website") or "")
     if not url:
         return {"ready": False, "short": "Falta su web", "why": "Falta su web en la ficha."}
@@ -234,12 +301,26 @@ def plan(clinic: dict) -> dict:
         "treatment": treatment_on_card(clinic.get("treatments") or "") if kind == "booking" else "",
         "headline": headline, "detail": detail,
         "points": POINTS.get(kind, booking),
+        # Only the speed prototype: Google's score today and what slows the website down.
+        "speed": {"score": speed_score(clinic), "brakes": brakes(clinic)} if kind == "speed" else None,
     }
 
 
 def prototype(job: dict, treatment: str) -> dict:
-    """The words of scene 3, the prototype. In "sources" and "posts" every number is an example."""
+    """The words of scene 3, the prototype. In "sources" and "posts" every number is an example; in "speed"
+    every number is the one Google measured."""
     clinic = job["clinic"]
+    if job["kind"] == "speed":
+        score = job["speed"]["score"]
+        return {
+            "kind": "speed", "kicker": "Así quedaría", "sub": "La misma web, abriéndose rápido en el móvil.",
+            "clock": "10:24", "title": "Velocidad en el móvil", "note": "Test de Google PageSpeed",
+            "today": {"label": "Hoy", "score": score, "text": str(score)},
+            "goal": {"label": "Objetivo", "score": SPEED_GOAL, "text": f"{SPEED_GOAL}+"},
+            "brakes_title": "Lo que la frena hoy", "brakes": job["speed"]["brakes"],
+            "total": f"De {score} a {SPEED_GOAL} o más",
+            "caption": "Vuestra web y vuestra imagen no cambian. Cambia lo que tarda en abrirse.",
+        }
     chat = {"kicker": "Así quedaría", "status": "en línea", "input": "Escribe un mensaje"}
     if job["kind"] == "review":
         return chat | {
