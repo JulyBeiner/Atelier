@@ -399,6 +399,12 @@ def read_page(result: dict, depth: int) -> dict:
     return page
 
 
+def is_same_page(page: dict, other: dict) -> bool:
+    """Same title, same headings and almost the same amount of text: one page seen through two addresses."""
+    return (page["title"] == other["title"] and page["headings"] == other["headings"]
+            and abs(page["words"] - other["words"]) <= max(5, other["words"] * 0.03))
+
+
 def looks_like_page(url: str) -> bool:
     return not urlsplit(url).path.lower().endswith(FILE_ENDINGS)
 
@@ -472,14 +478,29 @@ def crawl(start_url: str, progress=lambda text: None) -> dict:
         by_url: dict[str, dict] = {}
         seen = {normalize(start_url), root}
         queue: list[tuple[str, int]] = [(root, 0)]
+        # Some links only add "?something" to an address and show the very same page (a form filled in,
+        # a tracking code). Those are one page, not many: looks remembers what each address showed.
+        looks: dict[str, list[dict]] = {}
+        same_page: dict[str, dict] = {}
         while queue and len(pages) < MAX_PAGES:
             url, depth = queue.pop(0)
+            without_query = url.split("?")[0]
+            if "?" in url and without_query in same_page:
+                by_url[url] = same_page[without_query]
+                continue
             page = read_page(first if url == root else fetch(client, url), depth)
             already_read = page["url"] in by_url
             by_url.setdefault(url, page)
             by_url.setdefault(page["url"], page)
             if already_read or site_name(page["url"]) != site:
                 continue  # a redirect to a page we already have, or to another website
+            if "title" in page:
+                address = page["url"].split("?")[0]
+                twin = next((other for other in looks.setdefault(address, []) if is_same_page(page, other)), None)
+                if twin:
+                    same_page[address] = by_url[url] = by_url[page["url"]] = twin
+                    continue
+                looks[address].append(page)
             pages.append(page)
             seen.add(page["url"])
             progress(f"Leyendo la web: {len(pages)} páginas…")
@@ -490,7 +511,12 @@ def crawl(start_url: str, progress=lambda text: None) -> dict:
                         seen.add(target)
                         if depth < MAX_DEPTH:
                             queue.append((target, depth + 1))
-        unread = [url for url, _ in queue]
+        unread = []
+        for url, _ in queue:
+            if "?" in url and url.split("?")[0] in same_page:
+                by_url[url] = same_page[url.split("?")[0]]
+            else:
+                unread.append(url)
 
         # Every link we found but did not read as a page gets a quick "are you there?" check.
         targets: dict[str, None] = {}

@@ -19,19 +19,46 @@ DEVICES = {
                       " (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
     },
 }
-# How many page pixels go into each stretch of the overview. Stretches are saved at half size:
-# enough to judge layout, photos, colors and spacing, and cheap to send to the model.
+# Picture pixels per page pixel. The first screen is saved sharp, to read the typography.
+# The long stretches are saved smaller: enough to judge layout, photos, colors and spacing,
+# and cheap to send to the model.
+DETAIL = {"desktop": 1, "mobile": 2}
+OVERVIEW = {"desktop": 0.5, "mobile": 1}
+# How many page pixels go into each stretch.
 STRETCH = {"desktop": 2800, "mobile": 1560}
 HOME_STRETCHES = 3
 JPEG_QUALITY = 72
 
-# Scroll down slowly so images that load "when you get there" are really there, then go back up.
-SCROLL_THROUGH = """async () => {
+# Walk down the whole page like a visitor, so everything that loads "when you get there" is loaded.
+# Then wait for the images and go back up.
+WALK_THE_PAGE = """async () => {
   const pause = (ms) => new Promise((done) => setTimeout(done, ms));
-  const end = Math.min(document.documentElement.scrollHeight, 16000);
-  for (let y = 0; y < end; y += window.innerHeight) { window.scrollTo(0, y); await pause(110); }
-  window.scrollTo(0, 0);
-  await pause(350);
+  for (const image of document.images) image.loading = 'eager';
+  const step = Math.round(window.innerHeight * 0.6);
+  for (let y = 0; y < Math.min(document.documentElement.scrollHeight, 16000); y += step) {
+    window.scrollTo({ top: y, behavior: 'instant' });
+    await pause(140);
+  }
+  const loading = [...document.images].filter((image) => !image.complete).map((image) => new Promise((done) => {
+    image.addEventListener('load', done);
+    image.addEventListener('error', done);
+  }));
+  await Promise.race([Promise.all(loading), pause(6000)]);
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  await pause(900);
+}"""
+
+SCROLL_TO = "(top) => window.scrollTo({ top, behavior: 'instant' })"
+
+# Things pinned to the screen (a menu bar, a chat button) would repeat in every screen of a long picture.
+# After the first screen they are hidden. Big pinned blocks are left alone: they may hold the page itself.
+HIDE_PINNED = """() => {
+  const limit = window.innerHeight * 0.35;
+  for (const element of document.querySelectorAll('body *')) {
+    if (getComputedStyle(element).position === 'fixed' && element.getBoundingClientRect().height < limit) {
+      element.style.setProperty('visibility', 'hidden', 'important');
+    }
+  }
 }"""
 
 # Facts you cannot get from a picture: real sizes, font names, and whether the page spills sideways.
@@ -70,20 +97,48 @@ def launch(playwright):
     raise RuntimeError("No encontré ningún navegador. Instala Edge o Chrome, o ejecuta: playwright install chromium")
 
 
-def shoot(session, path: Path, device: str, top: int, height: int, scale: float) -> dict:
-    """Save one rectangle of the page as a JPEG. It can be below what the window shows."""
-    width = DEVICES[device]["viewport"]["width"]
-    picture = session.send("Page.captureScreenshot", {
-        "format": "jpeg", "quality": JPEG_QUALITY, "captureBeyondViewport": True,
-        "clip": {"x": 0, "y": top, "width": width, "height": height, "scale": scale},
-    })
-    path.write_bytes(base64.b64decode(picture["data"]))
-    pixels = DEVICES[device]["device_scale_factor"] * scale
-    return {"file": path.name, "device": device, "from": top, "to": top + height,
-            "width": round(width * pixels), "height": round(height * pixels)}
+def photograph(session, device: str, top: int, height: int, scale: float, kind: str) -> bytes:
+    """One rectangle of the page as picture bytes. top and height are in page pixels."""
+    options = {"format": kind, "captureBeyondViewport": True,
+               "clip": {"x": 0, "y": top, "width": DEVICES[device]["viewport"]["width"], "height": height, "scale": scale}}
+    if kind == "jpeg":
+        options["quality"] = JPEG_QUALITY
+    return base64.b64decode(session.send("Page.captureScreenshot", options)["data"])
 
 
-def capture_page(browser, url: str, index: int, device: str, folder: Path) -> dict:
+def shot_facts(path: Path, device: str, top: int, height: int, scale: float, part: str) -> dict:
+    return {"file": path.name, "device": device, "part": part, "from": top, "to": top + height,
+            "width": round(DEVICES[device]["viewport"]["width"] * scale), "height": round(height * scale)}
+
+
+def shoot_stretch(page, session, joiner, path: Path, device: str, top: int, height: int) -> None:
+    """One long picture of a stretch of the page, taken screen by screen as a visitor scrolls.
+
+    Many pages only show a block while it is on screen, so a single tall photo would come out with holes.
+    Each screen is photographed where a visitor would see it; a blank helper page then stacks them into one.
+    """
+    screen = DEVICES[device]["viewport"]["height"]
+    pieces, position = [], top
+    while position < top + height:
+        piece = min(screen, top + height - position)
+        page.evaluate(SCROLL_TO, position)
+        if position > 0:
+            page.evaluate(HIDE_PINNED)
+        page.wait_for_timeout(650)  # blocks that fade in when they reach the screen
+        picture = photograph(session, device, position, piece, OVERVIEW[device], "png")
+        pieces.append(base64.b64encode(picture).decode("ascii"))
+        position += piece
+    width = round(DEVICES[device]["viewport"]["width"] * OVERVIEW[device])
+    joiner.set_viewport_size({"width": width, "height": 50})  # low, so the long picture ends where the page does
+    joiner.set_content(
+        "<body style='margin:0;background:#fff'>" + "".join(
+            f"<img style='display:block;width:{width}px' src='data:image/png;base64,{piece}'>" for piece in pieces),
+        wait_until="load",
+    )
+    joiner.screenshot(path=str(path), type="jpeg", quality=JPEG_QUALITY, full_page=True)
+
+
+def capture_page(browser, joiner, url: str, index: int, device: str, folder: Path) -> dict:
     """Open one page on one device, look at it, and save its pictures."""
     result = {"url": url, "device": device, "shots": [], "facts": {}, "error": ""}
     context = browser.new_context(ignore_https_errors=True, locale="es-ES", **DEVICES[device])
@@ -98,26 +153,32 @@ def capture_page(browser, url: str, index: int, device: str, folder: Path) -> di
             page.wait_for_load_state("networkidle", timeout=4_000)
         except Exception:
             pass  # some pages never go quiet (chats, video): what has loaded is enough
-        page.evaluate(SCROLL_THROUGH)
+        page.wait_for_timeout(1_200)  # let the opening animation finish
+
+        session = context.new_cdp_session(page)
+        screen = DEVICES[device]["viewport"]["height"]
+        if index == 0:
+            # The homepage's first screen in full detail, exactly as it greets a visitor: before any scrolling.
+            path = folder / f"p{index}-{device}-top.jpg"
+            path.write_bytes(photograph(session, device, 0, screen, DETAIL[device], "jpeg"))
+            result["shots"].append(shot_facts(path, device, 0, screen, DETAIL[device], "top"))
+
+        page.evaluate(WALK_THE_PAGE)
         facts = page.evaluate(PAGE_FACTS)
         facts["console_errors"] = console_errors[:5]
         facts["failed_requests"] = failed_requests[:8]
         result["facts"] = facts
 
-        session = context.new_cdp_session(page)
-        screen = DEVICES[device]["viewport"]["height"]
-        if index == 0:  # the homepage also gets its first screen in full detail
-            result["shots"].append(shoot(session, folder / f"p{index}-{device}-top.jpg", device, 0, screen, 1) | {"part": "top"})
-        stretches = HOME_STRETCHES if index == 0 else 1
-        for number in range(stretches):
+        for number in range(HOME_STRETCHES if index == 0 else 1):
             top = number * STRETCH[device]
             height = min(STRETCH[device], facts["page_height"] - top)
-            if height < 200 and number > 0:
-                break
             if number == 0:
                 height = max(height, screen)  # a very short page still fills one screen
-            shot = shoot(session, folder / f"p{index}-{device}-{number + 1}.jpg", device, top, height, 0.5)
-            result["shots"].append(shot | {"part": str(number + 1)})
+            elif height < 200:
+                break
+            path = folder / f"p{index}-{device}-{number + 1}.jpg"
+            shoot_stretch(page, session, joiner, path, device, top, height)
+            result["shots"].append(shot_facts(path, device, top, height, OVERVIEW[device], str(number + 1)))
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"[:300]
     finally:
@@ -144,10 +205,11 @@ def main(arguments: list[str]) -> int:
                 return 0
             folder = Path(arguments[0])
             folder.mkdir(parents=True, exist_ok=True)
+            joiner = browser.new_context(device_scale_factor=1).new_page()  # the blank page that stacks the screens
             report = {"ok": True, "browser": name, "pages": []}
             for index, url in enumerate(arguments[1:]):
                 for device in DEVICES:
-                    report["pages"].append(capture_page(browser, url, index, device, folder))
+                    report["pages"].append(capture_page(browser, joiner, url, index, device, folder))
                     # Saved after every page: if the time runs out, what is done is not lost.
                     (folder / "capture.json").write_text(json.dumps(report), encoding="utf-8")
             print(json.dumps({"ok": True, "browser": name, "pages": len(report["pages"])}))

@@ -42,7 +42,7 @@ ROUGH_COST_USD = 0.30
 BASE_DIR = Path(__file__).parent
 REPORTS_DIR = BASE_DIR / "reports"  # screenshots live here; git ignores this folder
 INNER_PAGES_TO_SHOOT = 3
-CAPTURE_SECONDS = 180
+CAPTURE_SECONDS = 240
 
 # key, title in the report, and the PageSpeed score that replaces the agent's estimate when there is one.
 AREAS = [
@@ -75,6 +75,9 @@ Write for July, who decides what happens next. Rules:
 - Judge the design with Jul Beiner's taste: one clear message per screen, generous white space, few and soft colors,
   at most two typefaces, real and well-lit photos with consistent crops, consistent buttons and spacing,
   one strong button per screen, nothing shouting. Say concretely what you see in the screenshots.
+- A screenshot is a still picture. An empty block or a missing photo can be an animation or a slow image,
+  not a defect: unless the facts confirm it (for example "failed to load"), mention it once as something
+  for July to check, never as a certain problem, and do not lower the score for it.
 - Do not repeat one problem in several areas: put it where it matters most.
 - The most important first. Useful beats exhaustive.
 
