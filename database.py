@@ -45,6 +45,44 @@ CREATE TABLE IF NOT EXISTS reports (
     finished_at TEXT
 );
 
+-- One row each time the Web agent searches for inspiration for a client (step 2a of my method).
+CREATE TABLE IF NOT EXISTS inspiration_searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    task_id INTEGER REFERENCES tasks(id),
+    brief TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'running',
+    progress TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    data TEXT NOT NULL DEFAULT '{}',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at TEXT
+);
+
+-- A website that could inspire a client's new website. source is 'agent' (found by a search) or 'mine'
+-- (a link I added). state is 'looking' while the browser visits it, then 'ready' or 'failed'.
+-- verdict is my choice: '' (not decided), 'liked' or 'discarded'. likes says what I like about it.
+CREATE TABLE IF NOT EXISTS candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    search_id INTEGER REFERENCES inspiration_searches(id),
+    source TEXT NOT NULL DEFAULT 'agent',
+    url TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    award TEXT NOT NULL DEFAULT '',
+    found_at TEXT NOT NULL DEFAULT '',
+    why TEXT NOT NULL DEFAULT '',
+    look_at TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'looking',
+    verdict TEXT NOT NULL DEFAULT '',
+    likes TEXT NOT NULL DEFAULT '[]',
+    note TEXT NOT NULL DEFAULT '',
+    data TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS api_usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent TEXT NOT NULL,
@@ -58,7 +96,8 @@ CREATE TABLE IF NOT EXISTS api_usage (
 
 
 def get_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
+    # The agent sometimes writes from several threads at once: wait for a turn instead of failing.
+    connection = sqlite3.connect(DB_PATH, timeout=30)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     return connection

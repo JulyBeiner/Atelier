@@ -4,6 +4,9 @@ On the phone it also taps the menu button of the homepage, to check that the men
 The Web agent starts this file as its own process, so the browser never blocks the panel.
 Try it by hand:   python capture.py shots https://example.com
 Check it works:   python capture.py --check
+With --gallery every address is a different website to get to know (a candidate for inspiration):
+each one gets its first screen and one long picture, and nothing is tapped.
+                  python capture.py --gallery shots https://example.com https://example.org
 It needs Playwright:   pip install playwright   (it drives the Edge or Chrome already on this computer)
 """
 
@@ -277,9 +280,15 @@ def look_for_menu(page, url: str) -> dict:
     return found
 
 
-def capture_page(browser, joiner, url: str, index: int, device: str, folder: Path) -> dict:
-    """Open one page on one device, look at it, and save its pictures."""
-    result = {"url": url, "device": device, "shots": [], "facts": {}, "error": ""}
+def capture_page(browser, joiner, url: str, index: int, device: str, folder: Path, gallery: bool = False) -> dict:
+    """Open one page on one device, look at it, and save its pictures.
+
+    A client's website is one site: its homepage (index 0) gets the first screen, three long pictures and the
+    menu test; the inner pages get one long picture. In a gallery every page is the front door of a different
+    website: each one gets its first screen and one long picture.
+    """
+    front_door = gallery or index == 0
+    result = {"url": url, "device": device, "shots": [], "facts": {}, "error": "", "status": 0, "final_url": "", "title": ""}
     context = browser.new_context(ignore_https_errors=True, locale="es-ES", **DEVICES[device])
     try:
         page = context.new_page()
@@ -287,16 +296,20 @@ def capture_page(browser, joiner, url: str, index: int, device: str, folder: Pat
         page.on("console", lambda message: console_errors.append(message.text[:200]) if message.type == "error" else None)
         page.on("response", lambda response: failed_requests.append(f"{response.status} {response.url[:160]}")
                 if response.status >= 400 else None)
-        page.goto(url, wait_until="load", timeout=30_000)
+        answer = page.goto(url, wait_until="load", timeout=30_000)
         try:
-            page.wait_for_load_state("networkidle", timeout=4_000)
+            page.wait_for_load_state("networkidle", timeout=6_000 if gallery else 4_000)
         except Exception:
             pass  # some pages never go quiet (chats, video): what has loaded is enough
-        page.wait_for_timeout(1_200)  # let the opening animation finish
+        # Let the opening animation finish. Award-winning websites often start with a loading screen: wait longer.
+        page.wait_for_timeout(3_500 if gallery else 1_200)
+        result.update(status=answer.status if answer else 0, final_url=page.url, title=page.title()[:200])
+        if gallery and page.evaluate(ACCEPT_COOKIES):
+            page.wait_for_timeout(700)  # so the cookie notice is not what the picture shows
 
         session = context.new_cdp_session(page)
         screen = DEVICES[device]["viewport"]["height"]
-        if index == 0:
+        if front_door:
             # The homepage's first screen in full detail, exactly as it greets a visitor: before any scrolling.
             path = folder / f"p{index}-{device}-top.jpg"
             path.write_bytes(photograph(session, device, 0, screen, DETAIL[device], "jpeg"))
@@ -308,7 +321,7 @@ def capture_page(browser, joiner, url: str, index: int, device: str, folder: Pat
         facts["failed_requests"] = failed_requests[:8]
         result["facts"] = facts
 
-        for number in range(HOME_STRETCHES if index == 0 else 1):
+        for number in range(HOME_STRETCHES if index == 0 and not gallery else 1):
             top = number * STRETCH[device]
             height = min(STRETCH[device], facts["page_height"] - top)
             if number == 0:
@@ -319,7 +332,7 @@ def capture_page(browser, joiner, url: str, index: int, device: str, folder: Pat
             shoot_stretch(page, session, joiner, path, device, top, height)
             result["shots"].append(shot_facts(path, device, top, height, OVERVIEW[device], str(number + 1)))
 
-        if index == 0 and device == "mobile":
+        if index == 0 and device == "mobile" and not gallery:
             # Last, because it taps things. The pictures are already saved.
             facts["menu"] = look_for_menu(page, url)
     except Exception as error:
@@ -346,13 +359,16 @@ def main(arguments: list[str]) -> int:
             if arguments == ["--check"]:
                 print(json.dumps({"ok": True, "browser": name}))
                 return 0
+            gallery = arguments[0] == "--gallery"
+            if gallery:
+                arguments = arguments[1:]
             folder = Path(arguments[0])
             folder.mkdir(parents=True, exist_ok=True)
             joiner = browser.new_context(device_scale_factor=1).new_page()  # the blank page that stacks the screens
             report = {"ok": True, "browser": name, "pages": []}
             for index, url in enumerate(arguments[1:]):
                 for device in DEVICES:
-                    report["pages"].append(capture_page(browser, joiner, url, index, device, folder))
+                    report["pages"].append(capture_page(browser, joiner, url, index, device, folder, gallery))
                     # Saved after every page: if the time runs out, what is done is not lost.
                     (folder / "capture.json").write_text(json.dumps(report), encoding="utf-8")
             print(json.dumps({"ok": True, "browser": name, "pages": len(report["pages"])}))
@@ -362,7 +378,7 @@ def main(arguments: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or (sys.argv[1] != "--check" and len(sys.argv) < 3):
-        print("Usage: python capture.py FOLDER URL [URL ...]   or   python capture.py --check")
+    if len(sys.argv) < 2 or (sys.argv[1] != "--check" and len(sys.argv) < (4 if sys.argv[1] == "--gallery" else 3)):
+        print("Usage: python capture.py [--gallery] FOLDER URL [URL ...]   or   python capture.py --check")
         sys.exit(1)
     sys.exit(main(sys.argv[1:]))

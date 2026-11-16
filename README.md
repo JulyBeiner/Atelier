@@ -17,6 +17,15 @@ Small tasks: the agents do them and tell me. Important tasks: they prepare every
 
 The report waits in the panel until I approve or reject it.
 
+**The Web agent, step 2 of my method: look for inspiration (first part).** To be inspired, never to copy. One click starts a search for a client:
+
+- it searches the web for websites that design galleries have recognised (Awwwards, CSS Design Awards, FWA and others like them)
+- it checks what it found instead of trusting it: an award only counts as checked when the page that names it is really among the search results
+- it opens each website like a visitor, on desktop and on mobile, and keeps pictures and the typefaces it uses
+- it respects `robots.txt`: a website that asks programs to stay out is not opened
+
+The candidates wait in the panel. I mark the ones that inspire me and what I like about each (design, kind of page, animations, effects), and I can add links of my own, which is free.
+
 ## Run it
 
 Built with Python 3.14 on Windows. The screenshots use the Edge or Chrome already on the computer.
@@ -38,21 +47,22 @@ The panel is at http://127.0.0.1:8000. To check that screenshots work: `python c
 
 ## What it costs
 
-The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis. Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free.
+The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis, and an estimated 0.25 to 0.40 USD per search for inspiration (the tokens plus 0.01 USD for each web search). Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free. Opening a website to take pictures is free.
 
 ## What stays private
 
-The database, the reports with their screenshots and the `.env` file with the keys stay on my computer: git ignores them. No real client data goes in this repository.
+The database, the reports and candidates with their screenshots and the `.env` file with the keys stay on my computer: git ignores them. No real client data goes in this repository.
 
 ## The files
 
 - `main.py` — the API and the pages of the panel
 - `database.py` — SQLite storage: clients, tasks, reports and API spending
-- `web_agent.py` — the Web agent: gathers everything, asks Claude and saves the report
+- `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
+- `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts
 - `capture.py` — screenshots on desktop and on mobile, with Playwright
 - `pagespeed.py` — Google PageSpeed scores
-- `static/` — the panel (`index.html`) and the report page (`report.html`)
+- `static/` — the panel (`index.html`), the report page (`report.html`) and the inspiration page (`inspiration.html`)
 
 ## Departments
 1. **Brand** — branding, logo, colors, typography

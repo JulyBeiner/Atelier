@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import inspiration
 from database import get_connection, init_db
 from web_agent import REPORTS_DIR, readiness, recover_interrupted, start_analysis, usage_summary
 
@@ -25,6 +26,7 @@ Status = Literal["pending", "approved", "rejected", "done"]
 async def lifespan(app: FastAPI):
     init_db()
     recover_interrupted()
+    inspiration.recover_interrupted()
     yield
 
 
@@ -51,11 +53,33 @@ class Decision(BaseModel):
     feedback: str = Field(default="", max_length=2000)
 
 
+class InspirationBrief(BaseModel):
+    brief: str = Field(default="", max_length=2000)
+
+
+class MyLink(BaseModel):
+    url: str = Field(min_length=4, max_length=500)
+    note: str = Field(default="", max_length=1000)
+
+
+class Verdict(BaseModel):
+    verdict: Literal["", "liked", "discarded"]
+    likes: list[Literal["design", "page", "motion", "effects"]] = Field(default_factory=list, max_length=8)
+    note: str = Field(default="", max_length=1000)
+
+
+class Choice(BaseModel):
+    chosen: bool  # True: I finished choosing. False: none of them convinces me.
+    feedback: str = Field(default="", max_length=2000)
+
+
 # report_id is set when the task is a website analysis: the panel then links to the full report.
+# inspiration_id is set when the task is a search for inspiration: the panel then links to the candidates.
 TASK_QUERY = """
-SELECT tasks.*, clients.name AS client_name, reports.id AS report_id
+SELECT tasks.*, clients.name AS client_name, reports.id AS report_id, inspiration_searches.id AS inspiration_id
 FROM tasks JOIN clients ON clients.id = tasks.client_id
 LEFT JOIN reports ON reports.task_id = tasks.id
+LEFT JOIN inspiration_searches ON inspiration_searches.task_id = tasks.id
 """
 
 # An analysis without the long report inside: enough for lists and for comparing scores.
@@ -92,6 +116,12 @@ def panel():
 def report_page(report_id: int):
     """The page for reading one analysis comfortably. It loads its data from /api/reports/{id}."""
     return FileResponse(STATIC_DIR / "report.html")
+
+
+@app.get("/inspiration/{client_id}", include_in_schema=False)
+def inspiration_page(client_id: int):
+    """The page for choosing what inspires one client's website. It loads its data from /api/clients/{id}/inspiration."""
+    return FileResponse(STATIC_DIR / "inspiration.html")
 
 
 @app.get("/api/clients")
@@ -172,6 +202,54 @@ def report_shot(report_id: int, name: str):
     return FileResponse(path, media_type="image/jpeg")
 
 
+@app.get("/api/clients/{client_id}/inspiration")
+def get_inspiration(client_id: int):
+    """The candidates of one client, the last search, and whether a search waits for my decision."""
+    return inspiration.page_data(client_id)
+
+
+@app.post("/api/clients/{client_id}/inspiration/search", status_code=202)
+def search_inspiration(client_id: int, request: InspirationBrief | None = None):
+    """Start the Web agent looking for websites that can inspire. It uses the Claude API, so it costs money.
+
+    The search takes a few minutes and runs in the background: the page follows it by asking again.
+    """
+    return {"search_id": inspiration.start_search(client_id, request.brief if request else "")}
+
+
+@app.post("/api/clients/{client_id}/inspiration/links", status_code=201)
+def add_inspiration_link(client_id: int, link: MyLink):
+    """Add a website I already know. The agent only opens it and takes pictures: free."""
+    return inspiration.add_my_link(client_id, link.url, link.note)
+
+
+@app.post("/api/clients/{client_id}/inspiration/decision")
+def decide_inspiration(client_id: int, choice: Choice):
+    """I finished choosing, or none convinces me. It closes this client's searches waiting in the panel."""
+    return inspiration.decide(client_id, choice.chosen, choice.feedback)
+
+
+@app.post("/api/candidates/{candidate_id}/verdict")
+def candidate_verdict(candidate_id: int, verdict: Verdict):
+    """Mark one candidate: it inspires me (and what I like about it), I discard it, or not decided."""
+    return inspiration.set_verdict(candidate_id, verdict.verdict, verdict.likes, verdict.note)
+
+
+@app.post("/api/candidates/{candidate_id}/look", status_code=202)
+def candidate_look_again(candidate_id: int):
+    """Take the pictures of one candidate again. Free."""
+    return inspiration.visit_again(candidate_id)
+
+
+@app.get("/api/candidates/{candidate_id}/shots/{name}")
+def candidate_shot(candidate_id: int, name: str):
+    """One picture of a candidate."""
+    path = inspiration.shots_folder(candidate_id) / name
+    if not SHOT_NAME.fullmatch(name) or not path.is_file():
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return FileResponse(path, media_type="image/jpeg")
+
+
 @app.get("/api/agent/check")
 def agent_check():
     """What the Web agent has ready and what it is missing (keys, browser for screenshots)."""
@@ -225,6 +303,9 @@ def decide(task_id: int, new_status: str, feedback: str) -> dict:
         task = fetch_task(connection, task_id)
         if task["status"] != "pending":
             raise HTTPException(status_code=409, detail="Task is not waiting for approval")
+        if new_status == "approved" and task["inspiration_id"] and not inspiration.liked_count(connection, task["client_id"]):
+            # Approving a search means "these are the ones": it needs at least one.
+            raise HTTPException(status_code=409, detail="Marca al menos una web que te inspire antes de aprobar.")
         connection.execute(
             "UPDATE tasks SET status = ?, feedback = ?, decided_at = datetime('now') WHERE id = ?",
             (new_status, feedback.strip(), task_id),
