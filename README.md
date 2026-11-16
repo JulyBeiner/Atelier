@@ -36,7 +36,8 @@ The candidates wait in the panel. I mark the ones that inspire me and what I lik
 - "do not contact", and a button that erases a clinic with its people and its history when someone asks me to
 - it reads a clinic's own website, for free: it checks that the website is really theirs (its phone or its street must be on it) and collects its social profiles. When I do not know the website, it tries the addresses the clinic's name suggests and keeps one only if it passes that check
 - a quick X-ray of each clinic, for free and in about half a minute: where it loses patients, in the order a patient walks. 1) They find it: Google reviews, Instagram, ads, something that measures visits. 2) They choose it: its website, with Google's speed test on a phone. 3) They write and book: WhatsApp, online booking, a chat, a phone that can be tapped. Only checked facts; what cannot be seen from outside becomes a question for the diagnosis call. The biggest hole comes first, in one plain sentence: it is the topic of the proposal I send. One button for a clinic, one for all of them, and a filter by hole in the list
-- the message that sends each clinic my proposal and its prototype, drafted around its biggest hole, in a professional tone, as Jul Beiner (software, automations and marketing); and its follow-up. For Instagram, WhatsApp or email. I paste the two links, can change it, copy it, open WhatsApp or the mail with it ready, and note it as sent
+- a video for each clinic that carries my proposal and its prototype, for free and in a minute or two: under a minute, vertical, in my brand. The clinic and me, what I saw (their own website on a phone and the fact with its number), the prototype, what it would include (never a price) and an invitation to a short call. For a clinic with no WhatsApp or no online booking, the prototype is a WhatsApp conversation that books an appointment by itself, with the clinic's name and one of its treatments (from its card, or else the one its website names most). It goes as an attachment, because links to Atelier would not open on a clinic's phone. Marketing and web prototypes come next
+- the message that goes with the video, drafted around the clinic's biggest hole, in a professional tone, as Jul Beiner (software, automations and marketing); and its follow-up. For Instagram, WhatsApp or email. I can change it, copy it, open WhatsApp or the mail with it ready, attach the video, and note it as sent
 
 Atelier never sends a message. The links only open WhatsApp, the phone or the mail on my computer, and I write.
 
@@ -57,19 +58,19 @@ Open `.env` and paste two keys: `ANTHROPIC_API_KEY` (the agent needs it) and `PA
 fastapi dev main.py
 ```
 
-The panel is at http://127.0.0.1:8000 and the CRM at http://127.0.0.1:8000/crm. To check that screenshots work: `python capture.py --check`.
+The panel is at http://127.0.0.1:8000 and the CRM at http://127.0.0.1:8000/crm. To check that screenshots work: `python capture.py --check`. The videos need ffmpeg: it comes inside `imageio-ffmpeg`, which is in `requirements.txt`. To look at the design of the video with an invented clinic, open http://127.0.0.1:8000/static/video.html.
 
 The CRM starts empty. To try it with invented clinics, copy `sample_data/clinics-demo.json` into a folder called `private` and open the list of clinics: it offers to bring them in.
 
 ## What it costs
 
-The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis, and an estimated 0.25 to 0.40 USD per search for inspiration (the tokens plus 0.01 USD for each web search). Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free. Opening a website to take pictures is free. The CRM, reading a clinic's website and the quick X-ray do not use the Claude API: they are free.
+The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis, and an estimated 0.25 to 0.40 USD per search for inspiration (the tokens plus 0.01 USD for each web search). Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free. Opening a website to take pictures is free. The CRM, reading a clinic's website, the quick X-ray, the message and the video do not use the Claude API: they are free.
 
 ## What stays private
 
 The database, the reports and candidates with their screenshots and the `.env` file with the keys stay on my computer: git ignores them. No real client data goes in this repository.
 
-The clinics and the people of the CRM are real, so they live only in the local database. A list of clinics waiting to come in sits in `private/`, which git ignores too, and the file is deleted once they are in.
+The clinics and the people of the CRM are real, so they live only in the local database. A list of clinics waiting to come in sits in `private/`, which git ignores too, and the file is deleted once they are in. The clinics' videos live in `private/videos/`, and erasing a clinic erases its video.
 
 ## The files
 
@@ -79,12 +80,13 @@ The clinics and the people of the CRM are real, so they live only in the local d
 - `clinic_web.py` — finds and reads a clinic's own website: checks that it is theirs and collects its social profiles
 - `xray.py` — the quick X-ray of a clinic: its rules, and the measuring (its website and Google PageSpeed)
 - `outreach.py` — the drafts of the message to write to a clinic, from its biggest hole
+- `video.py` — the video with the proposal and its prototype: its words, and the recording (Playwright and ffmpeg)
 - `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
 - `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts
 - `capture.py` — screenshots on desktop and on mobile, with Playwright
 - `pagespeed.py` — Google PageSpeed scores
-- `static/` — the panel (`index.html`), the report page (`report.html`), the inspiration page (`inspiration.html`) and the CRM (`crm.html`, `clinic.html`, with their shared `crm.css` and `crm.js`)
+- `static/` — the panel (`index.html`), the report page (`report.html`), the inspiration page (`inspiration.html`), the CRM (`crm.html`, `clinic.html`, with their shared `crm.css` and `crm.js`) and the animated page the video is filmed from (`video.html`)
 - `sample_data/` — invented clinics for trying the CRM
 
 ## Departments

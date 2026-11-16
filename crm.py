@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import clinic_web
 import outreach
+import video
 import xray
 from database import get_connection
 
@@ -271,7 +273,8 @@ def create_clinic(new_clinic: ClinicCreate):
 
 @router.get("/clinics/{clinic_id}")
 def get_clinic(clinic_id: int):
-    """One clinic with its people, its history (newest first) and the drafts of the message to write to it."""
+    """One clinic with its people, its history (newest first), the drafts of the message to write to it
+    and the state of its video."""
     with get_connection() as connection:
         clinic = fetch_clinic(connection, clinic_id)
         people = connection.execute(
@@ -287,7 +290,8 @@ def get_clinic(clinic_id: int):
     people = [as_person(row) for row in people]
     history = [dict(row) for row in history]
     # The first message, written around its biggest hole. Atelier never sends it: I copy it.
-    return clinic | {"people": people, "history": history, "drafts": outreach.drafts(clinic, people, history)}
+    return clinic | {"people": people, "history": history, "drafts": outreach.drafts(clinic, people, history),
+                     "video": video.status(clinic)}
 
 
 @router.patch("/clinics/{clinic_id}")
@@ -308,10 +312,11 @@ def update_clinic(clinic_id: int, changes: ClinicUpdate):
 
 @router.delete("/clinics/{clinic_id}")
 def delete_clinic(clinic_id: int):
-    """Erase a clinic with its people and its history. For when someone asks me to delete their data."""
+    """Erase a clinic with its people, its history and its video. For when someone asks me to delete their data."""
     with get_connection() as connection:
         fetch_clinic(connection, clinic_id)
         connection.execute("DELETE FROM clinics WHERE id = ?", (clinic_id,))
+    video.forget(clinic_id)
     return {"deleted": True}
 
 
@@ -394,6 +399,40 @@ def take_xray(clinic_id: int):
     with get_connection() as connection:
         filled = save_reading(connection, clinic_id, found, {"xray_scan": json.dumps(scan, ensure_ascii=False)})
         return fetch_clinic(connection, clinic_id) | {"filled": filled}
+
+
+# ---- The video with the proposal ----
+
+@router.get("/clinics/{clinic_id}/video")
+def video_state(clinic_id: int):
+    """Whether its video can be made, whether it is being made (and how far it is) and the last one made."""
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    return video.status(clinic)
+
+
+@router.post("/clinics/{clinic_id}/video", status_code=202)
+def make_video(clinic_id: int):
+    """Make the clinic's video: a minute with what I saw, a prototype and an invitation to a call. Free: no API.
+
+    It takes a minute or two and runs in the background: the card follows it by asking again.
+    """
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    return video.start(clinic)
+
+
+@router.get("/clinics/{clinic_id}/video.mp4")
+def video_file(clinic_id: int, download: bool = False):
+    """The video itself: to watch it on the card, or to save it (download=true) and attach it to the message."""
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    path, _ = video.files(clinic_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Esta clínica todavía no tiene vídeo.")
+    name = re.sub(r"[^a-z0-9]+", "-", clinic_web.plain(clinic["name"])).strip("-")[:60] or "clinica"
+    return FileResponse(path, media_type="video/mp4", filename=f"propuesta-{name}.mp4" if download else None,
+                        headers={"Cache-Control": "no-store"})
 
 
 # ---- History ----

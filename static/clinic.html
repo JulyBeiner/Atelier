@@ -69,9 +69,18 @@
       <div id="xray"></div>
     </section>
 
+    <section aria-labelledby="video-title" id="video">
+      <div class="section-head">
+        <h2 id="video-title">Vídeo con la propuesta</h2>
+        <button type="button" class="quiet small" id="video-button" hidden>Hacer el vídeo</button>
+      </div>
+      <p class="section-note">Un minuto en vertical: lo que he visto en su web, un prototipo de cómo quedaría y la invitación a una llamada. Lo hace Atelier solo y es gratis. Lo descargas y lo adjuntas al mensaje.</p>
+      <div id="video-box"></div>
+    </section>
+
     <section aria-labelledby="draft-title" id="mensaje">
       <h2 id="draft-title">Mensaje para escribirle</h2>
-      <p class="section-note">Lleva tu propuesta y su prototipo, y sale de su agujero más grande. Atelier no envía nada: pegas los dos enlaces, lo repasas, lo copias y lo mandas tú.</p>
+      <p class="section-note">Sale de su agujero más grande y acompaña al vídeo de arriba. Atelier no envía nada: lo repasas, lo copias, adjuntas el vídeo y lo mandas tú.</p>
       <div id="draft"></div>
     </section>
 
@@ -503,17 +512,15 @@ function renderDraft() {
   text.rows = draftChoice.channel === "email" ? 13 : 7;
   text.value = current.text;
   writing.append(label, text);
-  // The links I still have to paste: the proposal and the prototype.
-  const missingLinks = () => drafts.links.filter((placeholder) => text.value.includes(placeholder));
-  const missing = el("p", "draft-warning");
-  const checkLink = () => {
-    const left = missingLinks();
-    missing.hidden = left.length === 0;
-    missing.textContent = "Falta pegar " + left.map((placeholder) => placeholder.slice(1, -1).replace("enlace a", "el enlace a")).join(" y ") + ".";
-  };
-  text.addEventListener("input", () => { remember(); checkLink(); });
-  checkLink();
-  writing.append(missing);
+  text.addEventListener("input", remember);
+  // The first message carries the video. Atelier cannot attach it: the page reminds me.
+  const proposal = draftChoice.kind === "proposal";
+  const hasVideo = Boolean(clinic.video.made);
+  if (proposal) {
+    writing.append(el("p", hasVideo ? "sub" : "draft-warning", hasVideo
+      ? "Adjunta su vídeo (lo descargas arriba) antes de enviarlo."
+      : "Todavía no has hecho su vídeo: está en la sección de arriba."));
+  }
 
   const actions = el("div", "draft-actions");
   const copy = el("button", "quiet small", "Copiar");
@@ -521,7 +528,8 @@ function renderDraft() {
   copy.onclick = async () => {
     try { await navigator.clipboard.writeText(text.value); }
     catch (error) { text.select(); document.execCommand("copy"); }
-    flash(missingLinks().length ? "Copiado. Ojo: faltan enlaces por pegar." : "Copiado. Cuando lo mandes, pulsa «Ya lo he enviado».");
+    flash(proposal ? "Copiado. Adjunta el vídeo y, cuando lo mandes, pulsa «Ya lo he enviado»."
+      : "Copiado. Cuando lo mandes, pulsa «Ya lo he enviado».");
   };
   actions.append(copy);
   // A link that only opens my own app with the message ready (Instagram cannot take the text: I paste it).
@@ -560,11 +568,94 @@ function renderDraft() {
   $("draft").replaceChildren(controls, why, writing, actions);
 }
 
+// ---- The video with the proposal ----
+
+let videoTimer = null;
+
+function renderVideo() {
+  const video = clinic.video;
+  const working = video.state === "working";
+  const button = $("video-button");
+  button.hidden = !video.ready;
+  button.disabled = working;
+  button.textContent = working ? "Haciendo el vídeo…" : video.made ? "Hacerlo otra vez" : "Hacer el vídeo";
+
+  const parts = [];
+  if (!video.ready) {
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "antes de nada"), el("p", "", video.why));
+    parts.push(block);
+  } else if (working) {
+    const meter = el("div", "meter");
+    const fill = el("div", "meter-fill");
+    fill.style.width = Math.round(video.progress * 100) + "%";
+    meter.append(fill);
+    parts.push(el("p", "video-doing", (video.say || "Haciendo el vídeo…") + " " + Math.round(video.progress * 100) + " %"), meter,
+      el("p", "sub", "Tarda uno o dos minutos. Puedes seguir con otra cosa: el vídeo se queda aquí."));
+  } else if (!video.made && video.state !== "failed") {
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "sin vídeo"),
+      el("p", "", "Abre su web en un móvil, monta las escenas con tu marca y las graba. Tarda uno o dos minutos."));
+    parts.push(block);
+  }
+  if (video.state === "failed") parts.push(el("p", "draft-warning", "No he podido hacer el vídeo. " + video.error));
+
+  if (video.made && !working) {
+    const made = video.made;
+    const player = el("video", "video-player");
+    player.controls = true;
+    player.playsInline = true;
+    player.preload = "metadata";
+    player.src = "/api/crm/clinics/" + clinicId + "/video.mp4?v=" + encodeURIComponent(made.made_at);
+    const about = el("div", "video-about");
+    if (video.outdated) about.append(el("p", "draft-warning", "La radiografía es más nueva que este vídeo: hazlo otra vez para que cuenten lo mismo."));
+    const from = { card: "de su ficha", web: "de su web" }[made.treatment_from] || "porque no encontré ninguno";
+    about.append(
+      el("p", "", "Hecho el " + sayMoment(made.made_at) + ". Dura " + Math.round(made.seconds) + " segundos y pesa "
+        + (made.bytes / 1048576).toFixed(1).replace(".", ",") + " MB."),
+      el("p", "sub", "En el chat pide cita para «" + made.treatment + "» (" + from + "). Si prefieres otro tratamiento, escríbelo el primero en «Tratamientos estrella» de la ficha y hazlo otra vez."),
+    );
+    const save = link("Descargar el vídeo", "/api/crm/clinics/" + clinicId + "/video.mp4?download=true");
+    save.setAttribute("download", "");
+    const actions = el("div", "draft-actions");
+    actions.append(save);
+    about.append(actions, el("p", "sub", "Para WhatsApp o Instagram desde el ordenador: adjúntalo en WhatsApp Web o en instagram.com. En el correo, como archivo adjunto."));
+    const box = el("div", "video-made");
+    box.append(player, about);
+    parts.push(box);
+  }
+  $("video-box").replaceChildren(...parts);
+
+  clearTimeout(videoTimer);
+  if (working) videoTimer = setTimeout(followVideo, 1500);
+}
+
+// While the video is being made, ask how it goes. When it finishes, the message below learns it has a video.
+async function followVideo() {
+  try {
+    const before = clinic.video.state;
+    clinic.video = await api("/api/crm/clinics/" + clinicId + "/video");
+    if (before === "working" && clinic.video.state === "done") flash("Vídeo hecho. Míralo antes de enviarlo.");
+  } catch (error) { showError(error.message); }
+  renderVideo();
+  if (clinic.video.state !== "working" && !$("draft").contains(document.activeElement)) renderDraft();
+}
+
+$("video-button").addEventListener("click", async () => {
+  showError("");
+  $("video-button").disabled = true;
+  try {
+    clinic.video = await send("POST", "/api/crm/clinics/" + clinicId + "/video");
+  } catch (error) { showError(error.message); }
+  renderVideo();
+});
+
 function render(withCard) {
   $("sheet").hidden = false;
   renderHeader();
   renderPath();
   renderXray();
+  renderVideo();
   if (!$("draft").contains(document.activeElement)) renderDraft();
   renderStep();
   renderHistory();

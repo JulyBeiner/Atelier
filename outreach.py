@@ -1,14 +1,14 @@
 """The message that sends a clinic my proposal and its prototype, written around the biggest hole of its
 quick X-ray. Free: no API.
 
-Atelier never sends it. It drafts it; I read it, change what I want, paste the two links (the proposal and
-the prototype), copy it and send it myself.
+Atelier never sends it. It drafts it; I read it, change what I want, copy it and send it myself, with the
+clinic's video attached (video.py): the proposal and its prototype in a minute.
 
 It always goes out as Jul Beiner: software, automations and marketing for aesthetic clinics. The tone is
 professional and clear: what I analysed, the fact with its number, and what I prepared for them.
 
 Two kinds of message, each for Instagram, WhatsApp and email:
-- proposal: what I saw, with the links to the proposal and the prototype;
+- proposal: what I saw, and the video that carries the proposal and the prototype;
 - follow_up: a few days later, when there was no answer.
 """
 
@@ -18,8 +18,8 @@ from xray import number
 
 WHO = "Soy Jul Beiner y me dedico al desarrollo de software, automatizaciones y marketing para clínicas estéticas."
 SIGNATURE = "Jul Beiner\njulbeiner · software, automatizaciones y marketing para clínicas estéticas"
-PROPOSAL_LINK = "[enlace a la propuesta]"
-PROTOTYPE_LINK = "[enlace al prototipo]"
+# The video goes as an attachment: a link to Atelier would not open on the clinic's phone.
+VIDEO_LINE = "Os adjunto un vídeo de un minuto con lo que he visto y un prototipo de cómo quedaría."
 
 # The kinds of message, and the contact each one is in the history once it is sent.
 KINDS = {
@@ -136,13 +136,11 @@ def write(kind: str, channel: str, what: str, fix: str, topic: str, name: str, c
     """One message: its subject (only for email) and its text."""
     hello = "Hola, buenos días" + (f", {name}" if name else "")
     if kind == "follow_up":
-        body = [f"Os escribí hace unos días con una propuesta y un prototipo sobre {topic}. ¿Pudisteis verlos?",
+        body = [f"Os escribí hace unos días con un vídeo sobre {topic}: una propuesta y un prototipo. ¿Pudisteis verlo?",
                 "Si os encaja, lo vemos en una llamada corta. Y si ahora no es el momento, decídmelo sin problema."]
         subject = f"Re: Propuesta para {clinic_name}"
     else:
-        body = [WHO, what,
-                f"Os he preparado una propuesta para {fix} y un prototipo de cómo quedaría:\n"
-                f"· Propuesta: {PROPOSAL_LINK}\n· Prototipo: {PROTOTYPE_LINK}",
+        body = [WHO, what, f"Os he preparado una propuesta para {fix}. {VIDEO_LINE}",
                 "Si os interesa, lo vemos en una llamada corta esta semana."]
         subject = f"Propuesta para {clinic_name}: {topic}"
     if channel == "email":
@@ -174,7 +172,6 @@ def drafts(clinic: dict, people: list[dict], history: list[dict]) -> dict:
         "kind": "follow_up" if sent else "proposal",
         "hole": hole["label"] if hole else "Sin agujeros a la vista",
         "to": name,
-        "links": [PROPOSAL_LINK, PROTOTYPE_LINK],
         "kinds": {key: {"label": label, "contact": contact} for key, (label, contact) in KINDS.items()},
         "channels": CHANNELS,
         "texts": {kind: {channel: write(kind, channel, what, fix, topic, name, clinic["name"]) for channel in CHANNELS}
