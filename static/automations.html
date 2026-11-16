@@ -256,7 +256,7 @@
 
     <section aria-labelledby="n8n-title">
       <h2 id="n8n-title">Lo que irá a n8n</h2>
-      <p class="section-note">El ensayo usa reglas sencillas para entender a la paciente. En n8n eso lo hace un modelo, con estas instrucciones. La agenda sigue las mismas reglas que aquí: los huecos salen siempre de la agenda, nunca del modelo.</p>
+      <p class="section-note">El ensayo usa reglas sencillas para entender a la paciente. En n8n eso lo hace un modelo, con estas instrucciones: las de la plantilla, con esta ficha dentro. La agenda sigue las mismas reglas que aquí: los huecos salen siempre de la agenda, nunca del modelo.</p>
       <details>
         <summary>Las instrucciones del asistente</summary>
         <pre class="words" id="instructions"></pre>
@@ -264,6 +264,11 @@
       <details>
         <summary>El recordatorio del día antes</summary>
         <pre class="words" id="reminder-example"></pre>
+      </details>
+      <details>
+        <summary>La ficha, tal como entra en n8n</summary>
+        <pre class="words" id="n8n-card"></pre>
+        <p class="hint" id="n8n-note"></p>
       </details>
     </section>
 
@@ -520,6 +525,13 @@ function draw() {
   drawStarters();
   $("instructions").textContent = service.instructions;
   $("reminder-example").textContent = service.reminder_example;
+  // The values of the «Ficha de la clínica» node in the clinic's copy, one per line, as n8n gets them.
+  const card = Object.entries(service.n8n_card).map(([field, value]) => field + ": " + value);
+  card.push("hora del recordatorio: " + service.config.reminder_time);
+  $("n8n-card").textContent = card.join("\n");
+  $("n8n-note").textContent = service.state === "approved"
+    ? "Con tu sí, Atelier puede crear la copia en tu n8n: pídeselo al chat de Automatizaciones. Queda en la carpeta «Atelier · Clínicas», sin publicar."
+    : "Cuando des tu sí, Atelier podrá crear con esto la copia de n8n de esta clínica, sin publicarla.";
 }
 
 async function showService(id) {

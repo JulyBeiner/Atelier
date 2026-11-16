@@ -6,7 +6,8 @@ My videos promise three things to a clinic with no WhatsApp or no online booking
 3) a reminder the day before.
 
 Here Atelier leaves that service ready for one clinic: its card (treatments and opening hours), a
-rehearsal with a pretend patient and a pretend diary, and the words that will go to n8n.
+rehearsal with a pretend patient and a pretend diary, and, with my yes, the clinic's copy of the n8n
+template (n8n/whatsapp-booking-template.ts) with its card in it.
 
 Nothing in this file sends a real message, calls the Claude API or costs money. The rehearsal runs on
 rules, on this computer: the diary part (which slots are free, never two bookings at once) is exact,
@@ -30,6 +31,9 @@ from database import get_connection
 router = APIRouter()
 
 STATIC_DIR = Path(__file__).parent / "static"
+# The n8n template, as n8n Workflow SDK code. The assistant's instructions are read from it, and each
+# clinic's copy is this same text with the clinic's card in it: the panel and n8n say the same thing.
+TEMPLATE = Path(__file__).parent / "n8n" / "whatsapp-booking-template.ts"
 
 # A service belongs to a clinic of the CRM, or to an invented clinic with only a name (for trying things).
 # config is the service's card and chat is where the rehearsal conversation stands; both are JSON.
@@ -684,34 +688,119 @@ def save(connection, service: dict, **changes) -> None:
                        [*values.values(), service["id"]])
 
 
+# ---------- What goes to n8n ----------
+
+class TemplateChanged(Exception):
+    """The n8n template no longer has a piece this file looks for. Better to say so than to send a wrong copy."""
+
+
+def js_text(piece: str) -> str:
+    """A piece of a JavaScript string as the text it stands for: "\\n" is a new line, "\\'" a quote."""
+    return re.sub(r"\\(.)", lambda found: "\n" if found.group(1) == "n" else found.group(1), piece)
+
+
+def template_instructions() -> str:
+    """The assistant's instructions exactly as the template gives them to the model, with n8n's {{ }} still in."""
+    code = TEMPLATE.read_text(encoding="utf-8")
+    found = re.search(r"systemMessage: expr\((.*?)\n\s*\)", code, re.S)
+    if not found:
+        raise TemplateChanged("las instrucciones del asistente (systemMessage)")
+    return "".join(js_text(piece) for piece in re.findall(r"'((?:[^'\\]|\\.)*)'", found.group(1)))
+
+
+def treatments_text(config: dict) -> str:
+    """The treatments as the template's «Huecos libres» node writes them for the model."""
+    return "\n".join(f"- {entry['name']}: {entry['minutes']} minutos" for entry in config["treatments"])
+
+
+def hours_text(config: dict) -> str:
+    return "\n".join(f"- {DAY_NAMES[number]}: {spans_text(config['hours'][day]) or 'cerrado'}"
+                     for number, day in enumerate(DAYS))
+
+
 def instructions(service: dict) -> str:
-    """What the assistant in n8n will be told about this clinic. The model does the language; the diary
-    stays with two tools that follow the same rules as the rehearsal."""
+    """What the assistant in n8n will be told about this clinic: the template's own words, with this card.
+
+    In n8n, the time, the patient's name and the free slots change with every message. Here they are
+    shown in brackets, saying what goes there.
+    """
     config = service["config"]
-    treatments = "\n".join(f"- {entry['name']}: {entry['minutes']} minutos" for entry in config["treatments"])
-    hours = "\n".join(f"- {DAY_NAMES[number]}: {spans_text(config['hours'][day]) or 'cerrado'}"
-                      for number, day in enumerate(DAYS))
-    return f"""Eres el asistente de {service['clinic_name']}, una clínica de medicina estética. Atiendes su WhatsApp a cualquier hora.
+    fills = {
+        "clinica": service["clinic_name"],
+        "tratamientos_texto": treatments_text(config),
+        "horario_texto": hours_text(config),
+        "ahora": "[el día y la hora de cada mensaje]",
+        "paciente_nombre": "[el nombre de quien escribe, si WhatsApp lo da]",
+        "huecos": "[los huecos libres de la agenda de la clínica, que n8n calcula en cada mensaje]",
+    }
+    try:
+        words = template_instructions()
+    except (OSError, TemplateChanged):
+        return f"No encuentro las instrucciones del asistente en la plantilla de n8n ({TEMPLATE.name})."
 
-Qué haces: dar cita, cambiarla o cancelarla. Nada más.
+    def fill(found: re.Match) -> str:
+        field = re.match(r"\$json\.(\w+)", found.group(1))
+        return fills.get(field.group(1), found.group(0)) if field else found.group(0)
 
-Cómo hablas: en español, de tú, con mensajes cortos y amables. Te presentas una vez como «el asistente de {service['clinic_name']}». Nunca dices que eres una persona.
+    return re.sub(r"\{\{\s*(.*?)\s*\}\}", fill, words)
 
-Reglas que no se rompen:
-- Los huecos salen siempre de la herramienta buscar_huecos. Nunca inventes un día ni una hora.
-- Ofrece tres huecos como mucho. Cuando la paciente elija uno, usa la herramienta reservar. Solo confirmas la cita si reservar dice que ha ido bien; si dice que el hueco ya no está, ofrece otros.
-- No des precios, ni consejo médico, ni opiniones sobre un tratamiento. Di que se lo confirma el equipo y usa la herramienta avisar_al_equipo.
-- Si no entiendes algo o la paciente está molesta, usa avisar_al_equipo y dile que le escribirán en cuanto abran.
-- No pidas datos de salud. Para reservar basta el nombre y el tratamiento.
-- Una cita no puede ser antes de {config['notice_hours']} horas desde ahora.
 
-Tratamientos y lo que dura cada cita:
-{treatments}
+def n8n_card(service: dict) -> dict:
+    """The values of the «Ficha de la clínica» node in this clinic's copy of the template."""
+    config = service["config"]
+    return {
+        "clinica": service["clinic_name"],
+        "tratamientos_json": json.dumps(config["treatments"], ensure_ascii=False, separators=(",", ":")),
+        "horario_json": json.dumps(config["hours"], separators=(",", ":")),
+        "antelacion_horas": str(config["notice_hours"]),
+    }
 
-Horario de la clínica:
-{hours}
 
-Cuando la cita quede reservada, dile el día y la hora y que el día antes recibirá un recordatorio."""
+def replace_once(code: str, pattern: str, new: str, what: str) -> str:
+    """Put new where pattern is. The pattern has to be there exactly once, or the template has changed."""
+    code, count = re.subn(pattern, lambda found: (found.group(1) if found.groups() else "") + new, code)
+    if count != 1:
+        raise TemplateChanged(what)
+    return code
+
+
+def n8n_copy(service: dict) -> str:
+    """This clinic's copy of the template, as n8n Workflow SDK code: the template with the card in it.
+
+    Only the card changes, plus the hour of the reminder, the workflow's name and the note on it. Every
+    value goes in as a JSON string, which is also a valid JavaScript string.
+    """
+    clinic = service["clinic_name"]
+    reminder = service["config"]["reminder_time"]
+    hour, minute = (int(part) for part in reminder.split(":"))
+    code = TEMPLATE.read_text(encoding="utf-8")
+    code = replace_once(code, r"\A(?://[^\n]*\n)+",
+                        f"// The copy of the n8n template for {' '.join(clinic.split())}, made by Atelier from the card "
+                        "July approved.\n",
+                        "el comentario del principio")
+    for field, value in n8n_card(service).items():
+        code = replace_once(code, rf"(name: '{field}', value: )'(?:[^'\\]|\\.)*'",
+                            json.dumps(value, ensure_ascii=False), f"el campo {field} de la ficha")
+    code = replace_once(code, r"triggerAtHour: \d+, triggerAtMinute: \d+",
+                        f"triggerAtHour: {hour}, triggerAtMinute: {minute}", "la hora del recordatorio")
+    code = replace_once(code, r"'Cada día a las \d\d:\d\d'", f"'Cada día a las {reminder}'",
+                        "el nombre del horario diario")
+    code = replace_once(code, r"workflow\('atelier-plantilla-whatsapp-reserva', '[^']*'\)",
+                        f"workflow('atelier-servicio-{service['id']}-whatsapp-reserva', "
+                        f"{json.dumps(f'Atelier · {clinic} · WhatsApp que reserva solo', ensure_ascii=False)})",
+                        "el nombre del flujo")
+    code = replace_once(code, r"'## Plantilla de Atelier:[^']*'",
+                        json.dumps(f"## {clinic}: un WhatsApp que contesta y reserva solo\n\n", ensure_ascii=False),
+                        "el título de la nota")
+    code = replace_once(code, r"'\*\*No publicar esta plantilla\.\*\*[^']*'",
+                        json.dumps(f"**Copia para {clinic}**, hecha por Atelier con la ficha que July aprobó en el "
+                                   "panel. No se publica ni se activa sin su sí.\n\n", ensure_ascii=False),
+                        "la primera línea de la nota")
+    code = replace_once(code, r"'1\. Ficha de la clínica:[^']*'",
+                        json.dumps("1. Ficha de la clínica: el id del calendario y el id del número de WhatsApp. "
+                                   "Lo demás ya viene de Atelier.\n", ensure_ascii=False),
+                        "el paso 1 de la nota")
+    return code
 
 
 def reminder_text(service: dict, starts_at: datetime) -> str:
@@ -745,6 +834,7 @@ def whole(connection, service: dict) -> dict:
          "when": spoken(datetime.fromisoformat(row["starts_at"]), now)}
         for row in bookings]
     service["instructions"] = instructions(service)
+    service["n8n_card"] = n8n_card(service)
     service["reminder_example"] = reminder_text(service, at_time(now.date() + timedelta(days=2), "17:00"))
     del service["chat"]
     return service
@@ -942,6 +1032,26 @@ def unapprove(service_id: int):
         service = fetch_service(connection, service_id)
         save(connection, service, approved_at=None)
         return whole(connection, fetch_service(connection, service_id))
+
+
+@router.get("/api/automations/services/{service_id}/n8n")
+def n8n_copy_of(service_id: int):
+    """This clinic's copy of the n8n template, ready for Atelier to create it in my n8n (unpublished).
+
+    Only with my yes: what goes to n8n is what I rehearsed and approved. Nothing here talks to n8n.
+    """
+    with get_connection() as connection:
+        service = fetch_service(connection, service_id)
+    if service["state"] != "approved":
+        raise HTTPException(status_code=409, detail="Todavía falta tu sí: a n8n solo va lo que has ensayado y aprobado.")
+    try:
+        code = n8n_copy(service)
+    except (OSError, TemplateChanged) as problem:
+        raise HTTPException(status_code=500, detail=f"La plantilla de n8n ha cambiado y no encuentro {problem}. "
+                            "Hay que revisar n8n_copy() en automations.py.")
+    return {"name": f"Atelier · {service['clinic_name']} · WhatsApp que reserva solo",
+            "card": n8n_card(service), "reminder_time": service["config"]["reminder_time"],
+            "approved_at": service["approved_at"], "code": code}
 
 
 @router.delete("/api/automations/services/{service_id}")
