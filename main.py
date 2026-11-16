@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from database import get_connection, init_db
@@ -28,6 +29,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Atelier", lifespan=lifespan)
+# The files the pages need, like the logo, are served from /static.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class ClientCreate(BaseModel):

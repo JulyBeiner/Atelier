@@ -39,11 +39,10 @@
   /* Top bar */
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .wordmark { font-family: var(--serif); font-size: 26px; letter-spacing: -0.01em; }
-  .by {
-    font-family: var(--hand); font-size: 20px; color: var(--olive-deep);
-    transform: rotate(-3deg); white-space: nowrap;
-  }
-  .by i { color: var(--coral); font-style: normal; }
+  /* "by" is a handwritten note and may tilt. The logo never does: it is not rotated or stretched. */
+  .by { display: flex; align-items: center; gap: 9px; }
+  .by span { font-family: var(--hand); font-size: 20px; color: var(--olive-deep); transform: rotate(-3deg); }
+  .logo { display: block; height: 34px; width: auto; }
 
   /* Hero: the headline is the status */
   .hero { padding: 72px 0 8px; }
@@ -193,7 +192,7 @@
 
   <div class="bar">
     <div class="wordmark">Atelier</div>
-    <div class="by">by julbeiner <i>♥</i></div>
+    <div class="by"><span>by</span><img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="126" height="34"></div>
   </div>
 
   <header class="hero">

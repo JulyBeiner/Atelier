@@ -44,6 +44,10 @@
   .back { font-weight: 500; text-decoration: none; border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 7px 16px; }
   .back:hover { border-color: var(--olive-deep); }
   .wordmark { font-family: var(--serif); font-size: 24px; letter-spacing: -0.01em; }
+  /* "by" is a handwritten note and may tilt. The logo never does: it is not rotated or stretched. */
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .brand .by { font-family: var(--hand); font-size: 19px; color: var(--olive-deep); transform: rotate(-3deg); margin-left: 5px; }
+  .logo { display: block; height: 30px; width: auto; }
 
   /* Opening: the verdict is the headline */
   .opening { padding: 64px 0 0; }
@@ -228,7 +232,11 @@
 
   <div class="bar">
     <a class="back" href="/">Volver al panel</a>
-    <div class="wordmark">Atelier</div>
+    <div class="brand">
+      <div class="wordmark">Atelier</div>
+      <span class="by">by</span>
+      <img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="111" height="30">
+    </div>
   </div>
 
   <!-- While the agent works, or if it could not finish -->
