@@ -618,6 +618,7 @@ function renderVideo() {
     player.src = "/api/crm/clinics/" + clinicId + "/video.mp4?v=" + encodeURIComponent(made.mixed_at || made.made_at);
     const about = el("div", "video-about");
     if (video.outdated) about.append(el("p", "draft-warning", "La radiografía es más nueva que este vídeo: hazlo otra vez para que cuenten lo mismo."));
+    if (made.no_scripts) about.append(el("p", "draft-warning", "Su web colgó el navegador, así que su foto está hecha sin los scripts de la página y puede faltarle algo. Mira bien la escena de su web antes de enviarlo."));
     const from = { card: "de su ficha", web: "de su web" }[made.treatment_from] || "porque no encontré ninguno";
     // What the prototype of this video is. Videos made before there were several kinds are the booking chat.
     const otherProto = {

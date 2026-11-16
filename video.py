@@ -67,7 +67,8 @@ FPS = 30
 JPEG_QUALITY = 92
 CRF = 20               # ffmpeg quality: lower is better and heavier
 MAKE_SECONDS = 600     # the whole job, at most
-LOOK_SECONDS = 90      # opening the clinic's website and photographing it, at most: some pages never finish
+ASK_SECONDS = 6        # a question to the clinic's page (its text, its cookie notice), at most
+LOOK_SECONDS = 60      # opening the clinic's website and photographing it, at most: some pages never finish
 SECONDS_EACH = 80      # what a video usually takes on my computer: for "quedan unos N minutos"
 CLOSED_STAGES = ("client", "not_interested")  # clinics I no longer write a first message to
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # on Windows, no black window pops up
@@ -540,44 +541,58 @@ def line() -> dict:
 
 
 def follow(clinic_id: int, job_file: Path) -> None:
-    """Run this file as its own process and keep JOBS up to date with the lines it prints."""
+    """Run this file as its own process and keep JOBS up to date with the lines it prints.
+
+    When the clinic's website hangs the browser, it tries once more without the website's own scripts.
+    """
     def update(**changes) -> None:
         with LOCK:
             if clinic_id in JOBS:  # not when the clinic was erased meanwhile
                 JOBS[clinic_id].update(changes)
 
-    too_long = threading.Event()
     try:
-        process = subprocess.Popen(
-            [sys.executable, str(BASE_DIR / "video.py"), str(job_file)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
-            creationflags=NO_WINDOW,
-        )
-        timer = threading.Timer(MAKE_SECONDS, lambda: (too_long.set(), process.kill()))
-        timer.start()
-        last, other = {}, deque(maxlen=5)
-        for printed in process.stdout:
-            try:
-                said = json.loads(printed)
-            except ValueError:
-                other.append(printed.strip())
-                continue
-            if "progress" in said:
-                update(progress=said["progress"], say=said["say"])
-            else:
-                last = said
-        process.wait()
-        timer.cancel()
+        last, error = run_job(job_file, update)
+        if last.get("hung"):
+            job = json.loads(job_file.read_text(encoding="utf-8"))
+            job_file.write_text(json.dumps(job | {"no_scripts": True}, ensure_ascii=False), encoding="utf-8")
+            update(progress=0.0, say="Su web se colgó: pruebo otra vez sin sus scripts…")
+            last, error = run_job(job_file, update)
         if last.get("ok"):
             update(state="done", progress=1.0, say="")
         else:
-            error = ("Tardó demasiado y lo he parado." if too_long.is_set()
-                     else last.get("error") or " ".join(other)[-300:] or "El proceso terminó sin decir nada.")
             update(state="failed", error=error)
     except Exception as error:  # the panel must never fall because of a video
         update(state="failed", error=f"{type(error).__name__}: {error}"[:300])
     finally:
         job_file.unlink(missing_ok=True)
+
+
+def run_job(job_file: Path, update) -> tuple[dict, str]:
+    """One run of the job, to its end: the last line it printed (ok, error...) and, when it went wrong, why."""
+    too_long = threading.Event()
+    process = subprocess.Popen(
+        [sys.executable, str(BASE_DIR / "video.py"), str(job_file)],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+        creationflags=NO_WINDOW,
+    )
+    timer = threading.Timer(MAKE_SECONDS, lambda: (too_long.set(), process.kill()))
+    timer.start()
+    last, other = {}, deque(maxlen=5)
+    for printed in process.stdout:
+        try:
+            said = json.loads(printed)
+        except ValueError:
+            other.append(printed.strip())
+            continue
+        if "progress" in said:
+            update(progress=said["progress"], say=said["say"])
+        else:
+            last = said
+    process.wait()
+    timer.cancel()
+    error = "" if last.get("ok") else ("Tardó demasiado y lo he parado." if too_long.is_set()
+                                       else last.get("error") or " ".join(other)[-300:] or "El proceso terminó sin decir nada.")
+    return last, error
 
 
 def forget(clinic_id: int) -> None:
@@ -758,7 +773,7 @@ def give_up_looking() -> None:
     """The clinic's website hung: say where and stop this process at once. Some pages keep a browser waiting
     for ever, and the videos behind this one in the line would wait with it."""
     finish(False, f"Su web se quedó colgada en el móvil ({SAID['last'].rstrip('…').lower()}) y lo he parado. "
-                  "Prueba otra vez; si vuelve a pasar, dímelo.")
+                  "Prueba otra vez; si vuelve a pasar, dímelo.", hung=True)
     os._exit(1)
 
 
@@ -777,14 +792,29 @@ def data_uri(content: bytes, kind: str) -> str:
     return f"data:{kind};base64," + base64.b64encode(content).decode("ascii")
 
 
-def look(browser, url: str) -> tuple[bytes, str]:
-    """The clinic's homepage on a phone: its first screen, as a visitor sees it, and all its text."""
+def ask(page, script: str, value=None):
+    """Run a script in the page and give back its answer, or None when the page does not answer in a few
+    seconds. A page whose own scripts keep it busy would make a plain evaluate() wait for ever; this way
+    the video is made anyway, with the picture of the website as it is."""
+    wrapped = f"(value) => ({{ answer: ({script})(value) }})"
+    try:
+        return page.wait_for_function(wrapped, arg=value, timeout=ASK_SECONDS * 1000).json_value()["answer"]
+    except Exception:
+        return None
+
+
+def look(browser, url: str, scripts: bool = True) -> tuple[bytes, str]:
+    """The clinic's homepage on a phone: its first screen, as a visitor sees it, and all its text.
+
+    With scripts=False the page's own scripts do not run. It is the second try for a website whose scripts
+    hang the browser: the picture can miss what those scripts would have drawn, so the card asks me to look.
+    """
     if not site_reader.is_public(url):
         raise RuntimeError("Su web no es una dirección pública.")
     if not robots_allow(url):
         raise RuntimeError("Su web pide a los programas que no entren, así que no la abro.")
     device = capture.DEVICES["mobile"]
-    context = browser.new_context(ignore_https_errors=True, locale="es-ES", **device)
+    context = browser.new_context(ignore_https_errors=True, locale="es-ES", **(device | {"java_script_enabled": scripts}))
     try:
         page = context.new_page()
         try:
@@ -798,14 +828,14 @@ def look(browser, url: str) -> tuple[bytes, str]:
             pass  # some pages never go quiet (chats, video): what has loaded is enough
         page.wait_for_timeout(2_000)  # the opening animation
         tell(0.06, "Quitando el aviso de cookies…")
-        if page.evaluate(capture.ACCEPT_COOKIES):
+        if ask(page, capture.ACCEPT_COOKIES):
             page.wait_for_timeout(900)  # so the cookie notice is not what the picture shows
-        page.evaluate(capture.SCROLL_TO, 0)
+        ask(page, capture.SCROLL_TO, 0)
         tell(0.07, "Fotografiando su web…")
         session = context.new_cdp_session(page)
         shot = capture.photograph(session, "mobile", 0, device["viewport"]["height"], capture.DETAIL["mobile"], "jpeg")
         tell(0.08, "Leyendo el texto de su web…")
-        return shot, page.evaluate(PAGE_TEXT)
+        return shot, ask(page, PAGE_TEXT) or ""
     finally:
         context.close()
 
@@ -900,7 +930,7 @@ def main(job_path: str) -> int:
             patience.daemon = True
             patience.start()
             try:
-                shot, text = look(browser, job["url"])
+                shot, text = look(browser, job["url"], scripts=not job.get("no_scripts"))
             finally:
                 patience.cancel()
             booking = job["kind"] == "booking"
@@ -918,6 +948,8 @@ def main(job_path: str) -> int:
                 "angle": job["angle"], "key": job["key"], "prototype": job["kind"],
                 "treatment": (treatment or NO_TREATMENT) if booking else "",
                 "treatment_from": source, "took": round(time.monotonic() - started), **done,
+                # True when their website hung the browser and its picture was taken without its scripts.
+                "no_scripts": bool(job.get("no_scripts")),
             }
             files(clinic_id)[1].write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")
             tell(0.97, "Poniendo el audio…" if audio_for(clinic_id) else "Terminando…")
