@@ -127,13 +127,15 @@ AREA_SCHEMA = {
     "required": ["score", "summary", "works", "fails"],
     "additionalProperties": False,
 }
+# The eight areas share one definition ($ref): written out eight times, the API finds the schema too large.
 REPORT_SCHEMA = {
     "type": "object",
+    "$defs": {"area": AREA_SCHEMA},
     "properties": {
         "one_line": {"type": "string"},
         "areas": {
             "type": "object",
-            "properties": {key: AREA_SCHEMA for key, _, _ in AREAS},
+            "properties": {key: {"$ref": "#/$defs/area"} for key, _, _ in AREAS},
             "required": [key for key, _, _ in AREAS],
             "additionalProperties": False,
         },
