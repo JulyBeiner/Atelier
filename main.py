@@ -1,4 +1,4 @@
-"""Atelier control panel: clients, tasks from the agents, and my approvals."""
+"""Atelier control panel: clients, tasks from the agents, my approvals, and the CRM."""
 
 import json
 import re
@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import crm
 import inspiration
 from database import get_connection, init_db
 from web_agent import REPORTS_DIR, readiness, recover_interrupted, start_analysis, usage_summary
@@ -33,6 +34,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Atelier", lifespan=lifespan)
 # The files the pages need, like the logo, are served from /static.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Everything under /api/crm lives in crm.py.
+app.include_router(crm.router)
 
 
 class ClientCreate(BaseModel):
@@ -122,6 +125,18 @@ def report_page(report_id: int):
 def inspiration_page(client_id: int):
     """The page for choosing what inspires one client's website. It loads its data from /api/clients/{id}/inspiration."""
     return FileResponse(STATIC_DIR / "inspiration.html")
+
+
+@app.get("/crm", include_in_schema=False)
+def crm_page():
+    """The CRM: what to do today and the list of clinics. It loads its data from /api/crm."""
+    return FileResponse(STATIC_DIR / "crm.html")
+
+
+@app.get("/crm/clinics/{clinic_id}", include_in_schema=False)
+def clinic_page(clinic_id: int):
+    """The card of one clinic. It loads its data from /api/crm/clinics/{id}."""
+    return FileResponse(STATIC_DIR / "clinic.html")
 
 
 @app.get("/api/clients")

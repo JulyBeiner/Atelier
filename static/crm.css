@@ -1,0 +1,284 @@
+/* The CRM pages (crm.html and clinic.html). Jul Beiner brand tokens, the same as the panel. */
+:root {
+  --cream: #FDFBF7;
+  --peach: #F9E1D6;
+  --coral: #EFA48C;
+  --sage: #DCDDC4;
+  --olive: #A8A97A;
+  --olive-deep: #5E6440;
+  --ink: #2B2420;
+  --soft: #4A413A;
+  --muted: #74695F;
+  --line: #E9E0D3;
+  --warm: #F8F3EA;
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Instrument Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --hand: "Caveat", "Segoe Print", cursive;
+  --radius: 18px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--cream); color: var(--ink);
+  font-family: var(--sans); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 28px 140px; }
+a { color: var(--olive-deep); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+[hidden] { display: none !important; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--olive-deep); outline-offset: 2px;
+}
+
+/* Top bar: where I am on the left, the brand on the right */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.bar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.back { font-weight: 500; text-decoration: none; border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 7px 16px; }
+.back:hover { border-color: var(--olive-deep); }
+.tabs { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+.tabs a { padding: 5px 16px; border-radius: 999px; text-decoration: none; font-weight: 500; color: var(--muted); }
+.tabs a:hover { color: var(--ink); }
+.tabs a[aria-current="page"] { background: var(--ink); color: var(--cream); }
+.wordmark { font-family: var(--serif); font-size: 24px; letter-spacing: -0.01em; }
+/* "by" is a handwritten note and may tilt. The logo never does: it is not rotated or stretched. */
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand .by { font-family: var(--hand); font-size: 19px; color: var(--olive-deep); transform: rotate(-3deg); margin-left: 5px; }
+.logo { display: block; height: 30px; width: auto; }
+
+/* Opening: the headline is the state of the day, or the name of the clinic */
+.opening { padding: 64px 0 0; }
+.whose { color: var(--muted); margin: 0 0 14px; }
+h1 {
+  font-family: var(--serif); font-weight: 400; letter-spacing: -0.02em;
+  font-size: clamp(40px, 6vw, 68px); line-height: 1.04; margin: 0; max-width: 18ch; text-wrap: balance;
+}
+h1 em { font-style: italic; background: linear-gradient(transparent 64%, rgba(239, 164, 140, 0.5) 64%); padding: 0 0.06em; }
+.lede { color: var(--muted); margin: 18px 0 0; font-size: 16px; max-width: 60ch; }
+h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; letter-spacing: -0.01em; margin: 0 0 18px; }
+h3 { font-family: var(--serif); font-weight: 400; font-size: 23px; letter-spacing: -0.01em; margin: 0 0 12px; }
+section { margin-top: 64px; }
+.section-note { color: var(--muted); margin: -10px 0 18px; max-width: 62ch; }
+
+.stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 30px; }
+.stat {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px 6px 14px;
+  font-size: 13px; color: var(--muted);
+}
+.stat b { font-family: var(--serif); font-weight: 400; font-size: 20px; color: var(--ink); line-height: 1; }
+
+/* Buttons: pills. One strong button per screen; the rest stay quiet. */
+button {
+  font: inherit; font-weight: 500; cursor: pointer;
+  border-radius: 999px; padding: 10px 22px;
+  border: 1px solid var(--olive-deep); background: var(--olive-deep); color: var(--cream);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+button:hover { background: #4E5435; border-color: #4E5435; }
+button.quiet { background: transparent; color: var(--ink); border-color: rgba(43, 36, 32, 0.28); }
+button.quiet:hover { border-color: var(--ink); background: transparent; }
+button.small { padding: 5px 14px; font-size: 13px; }
+button.danger { background: transparent; color: #8A3B26; border-color: rgba(138, 59, 38, 0.4); }
+button.danger:hover { background: transparent; border-color: #8A3B26; }
+button:disabled { opacity: 0.55; cursor: default; }
+
+/* Forms */
+form { display: grid; gap: 14px; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+input, select, textarea {
+  font: inherit; color: var(--ink); background: #FFFFFF;
+  border: 1px solid var(--line); border-radius: 12px; padding: 9px 13px; width: 100%;
+}
+input::placeholder, textarea::placeholder { color: #A39A90; }
+textarea { resize: vertical; }
+input[type="checkbox"] { width: auto; accent-color: var(--olive-deep); margin: 0 8px 0 0; }
+.check { display: flex; align-items: center; font-size: 15px; color: var(--ink); margin: 0; }
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.form-error { color: #8A3B26; font-size: 14px; margin: 0; }
+
+details { margin-top: 22px; }
+summary {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  font-weight: 500; color: var(--olive-deep);
+  border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 8px 18px;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "+"; font-size: 17px; line-height: 1; }
+details[open] summary::before { content: "–"; }
+summary:hover { border-color: var(--olive-deep); }
+details form { margin-top: 18px; }
+
+/* The stage of a clinic, as a small label */
+.pill {
+  display: inline-flex; align-items: center; white-space: nowrap;
+  font-size: 12px; font-weight: 500; border-radius: 999px; padding: 3px 11px;
+  background: var(--sage); color: #3F4429; border: 1px solid transparent;
+}
+.pill.to_contact { background: transparent; border-color: var(--line); color: var(--muted); }
+.pill.client { background: var(--olive-deep); color: var(--cream); }
+.pill.later { background: var(--peach); color: var(--soft); }
+.pill.not_interested { background: #EFE9DF; color: var(--muted); }
+.pill.stop { background: transparent; border-color: rgba(138, 59, 38, 0.4); color: #8A3B26; }
+
+/* Ways to reach a clinic: small quiet links */
+.reach { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 13px; }
+
+/* "Hoy": one line per clinic, the name first and what to do right under it */
+.todo-list { list-style: none; margin: 0; padding: 0; }
+.todo {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 28px; align-items: center;
+  padding: 18px 0; border-top: 1px solid var(--line);
+}
+.todo:first-child { border-top: 0; padding-top: 0; }
+.todo-name { font-family: var(--serif); font-size: 25px; line-height: 1.15; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+.todo-name:hover { text-decoration: underline; text-decoration-thickness: 1px; }
+.todo-step { margin-top: 3px; font-size: 16px; color: var(--soft); }
+.todo-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; margin-top: 9px; font-size: 13px; color: var(--muted); }
+.todo-side { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.todo-side select { width: auto; border-radius: 999px; padding: 5px 12px; font-size: 13px; background: transparent; border-color: rgba(43, 36, 32, 0.28); }
+.when { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 500; }
+.when::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--olive); }
+.when.late::before { background: var(--coral); }
+/* What I let slip gets the peach block: it is the first thing to look at. */
+.slipped { background: var(--peach); border-radius: var(--radius); padding: 26px 28px; }
+.slipped .todo { border-top-color: rgba(43, 36, 32, 0.12); }
+.slipped .todo-meta { color: var(--soft); }
+@media (max-width: 720px) {
+  .todo { grid-template-columns: 1fr; }
+  .todo-side { justify-content: flex-start; }
+}
+
+.empty-block {
+  background: var(--peach); border-radius: var(--radius);
+  padding: 30px 28px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.empty-block .note { font-family: var(--hand); font-size: 26px; color: var(--olive-deep); transform: rotate(-3deg); }
+.empty-block p { margin: 0; color: var(--soft); }
+.empty { color: var(--muted); }
+.notice {
+  background: var(--sage); border-radius: var(--radius); padding: 20px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 28px;
+}
+.notice p { margin: 0; }
+
+/* The list of clinics */
+.filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(4, minmax(120px, 1fr)); gap: 10px; }
+.count-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin: 14px 0 22px; }
+.count-line .check { font-size: 13px; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table.clinics { width: 100%; border-collapse: collapse; }
+.clinics th { text-align: left; font-weight: 500; font-size: 13px; color: var(--muted); padding: 0 16px 10px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.clinics th button { all: unset; cursor: pointer; font-weight: 500; }
+.clinics th button:hover { color: var(--ink); }
+.clinics th button:focus-visible { outline: 2px solid var(--olive-deep); outline-offset: 2px; border-radius: 4px; }
+.clinics th[aria-sort] button { color: var(--ink); }
+.clinics th[aria-sort="ascending"] button::after { content: " ↑"; }
+.clinics th[aria-sort="descending"] button::after { content: " ↓"; }
+.clinics td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.clinics tr.off td { opacity: 0.6; }
+.clinic-name { font-size: 16px; font-weight: 500; color: var(--ink); text-decoration: none; }
+.clinic-name:hover { text-decoration: underline; text-decoration-thickness: 1px; }
+.sub { font-size: 13px; color: var(--muted); }
+.nowrap { white-space: nowrap; }
+@media (max-width: 900px) {
+  .filters { grid-template-columns: 1fr 1fr; }
+  .filters .wide { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  table.clinics, .clinics tbody, .clinics tr, .clinics td { display: block; }
+  .clinics thead { display: none; }
+  .clinics tr { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .clinics td { padding: 2px 0; border: 0; }
+  .clinics td.blank { display: none; }
+}
+
+/* The card of one clinic */
+.reach-line { display: flex; gap: 6px 20px; flex-wrap: wrap; margin-top: 18px; font-size: 15px; }
+.reach-line span { color: var(--muted); }
+/* The path: seven steps in order, so it is drawn as a line with stops. The current stop is the full one. */
+.track { list-style: none; display: flex; margin: 0; padding: 4px 0 4px 4px; overflow-x: auto; }
+.track li { flex: 1 1 0; min-width: 112px; position: relative; }
+.track li::after { content: ""; position: absolute; top: 10px; left: 12px; right: 0; height: 1.5px; background: var(--line); }
+.track li:last-child::after { display: none; }
+.track button {
+  all: unset; cursor: pointer; display: block; position: relative;
+  padding: 26px 12px 4px 0; font-size: 13px; color: var(--muted);
+}
+.track button::before {
+  content: ""; position: absolute; top: 4px; left: 0; width: 13px; height: 13px; border-radius: 50%;
+  border: 1.5px solid var(--olive); background: var(--cream); z-index: 1; box-sizing: border-box;
+}
+.track button:hover { color: var(--ink); }
+.track button:focus-visible { outline: 2px solid var(--olive-deep); outline-offset: 2px; border-radius: 6px; }
+.track li.passed::after { background: var(--olive); }
+.track li.passed button::before { background: var(--olive); }
+.track li.current button { color: var(--ink); font-weight: 600; }
+.track li.current button::before { background: var(--olive-deep); border-color: var(--olive-deep); outline: 4px solid rgba(94, 100, 64, 0.16); }
+.off-path { display: flex; gap: 8px 10px; flex-wrap: wrap; align-items: center; margin-top: 20px; }
+.off-path .sub { margin-right: 4px; }
+.reason { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.reason input { flex: 1 1 240px; width: auto; }
+
+.sheet { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 0 64px; }
+@media (max-width: 880px) { .sheet { grid-template-columns: 1fr; } }
+.card { background: var(--sage); border-radius: var(--radius); padding: 24px 26px; }
+.card h2 { margin-bottom: 4px; }
+.card .sub { margin: 0 0 16px; color: var(--soft); }
+.card input { border-color: transparent; }
+.step-form { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 10px; }
+.step-form .form-actions { grid-column: 1 / -1; }
+@media (max-width: 560px) { .step-form { grid-template-columns: 1fr; } }
+.stop-note { background: var(--peach); border-radius: var(--radius); padding: 18px 22px; margin-top: 28px; }
+.stop-note p { margin: 0; }
+
+.history { list-style: none; margin: 0; padding: 0; }
+.history li { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 0 16px; padding: 14px 0; border-top: 1px solid var(--line); align-items: start; }
+.history li:first-child { border-top: 0; }
+.history li.empty { display: block; }
+.history .day { font-size: 13px; color: var(--muted); padding-top: 2px; }
+.history .what { font-weight: 500; }
+.history .text { white-space: pre-wrap; color: var(--soft); margin-top: 2px; overflow-wrap: anywhere; }
+.history .remove { all: unset; cursor: pointer; font-size: 13px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.history .remove:hover { color: var(--ink); }
+.history .remove:focus-visible { outline: 2px solid var(--olive-deep); outline-offset: 2px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.section-head h2 { margin: 0; }
+
+.people { list-style: none; margin: 0; padding: 0; }
+.people li { padding: 14px 0; border-top: 1px solid var(--line); }
+.people li:first-child { border-top: 0; padding-top: 0; }
+.people .name { font-weight: 500; font-size: 16px; }
+.people .person-actions { display: flex; gap: 14px; margin-top: 6px; font-size: 13px; }
+.linkish { all: unset; cursor: pointer; color: var(--olive-deep); text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+.linkish:focus-visible { outline: 2px solid var(--olive-deep); outline-offset: 2px; }
+.saved { font-family: var(--hand); font-size: 21px; color: var(--olive-deep); transform: rotate(-2deg); display: inline-block; }
+.danger-zone { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--line); }
+.danger-zone p { color: var(--muted); margin: 0 0 14px; max-width: 60ch; }
+
+/* The window for noting a contact */
+dialog {
+  border: 0; border-radius: var(--radius); padding: 0; width: min(580px, calc(100vw - 32px));
+  background: var(--cream); color: var(--ink);
+}
+dialog::backdrop { background: rgba(43, 36, 32, 0.45); }
+.dialog-body { padding: 28px 30px 30px; }
+dialog h2 { margin: 0 0 2px; }
+dialog .sub { margin: 0 0 20px; }
+.next-box { background: var(--warm); border-radius: 14px; padding: 16px 18px; display: grid; gap: 12px; }
+.next-box .row { grid-template-columns: minmax(0, 1fr) 160px; }
+@media (max-width: 520px) { .next-box .row { grid-template-columns: 1fr; } }
+
+/* A short confirmation after I do something */
+#flash {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  background: var(--ink); color: var(--cream); border-radius: 999px; padding: 10px 22px;
+  font-weight: 500; max-width: calc(100vw - 32px); z-index: 10;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+}
+#flash.on { opacity: 1; }
+#error {
+  display: none; margin-top: 28px; padding: 14px 18px; border-radius: 12px;
+  background: var(--peach); color: var(--ink); border-left: 3px solid var(--coral);
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

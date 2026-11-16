@@ -1,0 +1,8 @@
+[
+  {"name": "Clínica Demo Aurora", "city": "Madrid", "area": "Salamanca", "address": "Calle Inventada, 1", "phone": "+34 600 00 00 01", "website": "https://example.com", "kind": "independent", "batch": "demo", "origin": "Invented sample data"},
+  {"name": "Clínica Demo Brisa", "city": "Madrid", "area": "Salamanca", "address": "Calle Inventada, 2, 1º A", "phone": "+34 600 00 00 02", "instagram": "@clinicademobrisa", "kind": "independent", "batch": "demo", "origin": "Invented sample data"},
+  {"name": "Dra. Demo Castaño", "city": "Madrid", "area": "Chamberí", "address": "Calle Inventada, 3", "phone": "+34 600 00 00 03", "kind": "independent", "batch": "demo", "origin": "Invented sample data"},
+  {"name": "Demo Clinic Dalia", "city": "Madrid", "area": "Chamberí", "address": "Calle Inventada, 4", "phone": "+34 910 00 00 04", "kind": "chain", "batch": "demo", "origin": "Invented sample data", "notes": "Larger clinic: it may have its own marketing team."},
+  {"name": "Estética Demo Encina", "city": "Madrid", "area": "Salamanca", "address": "Calle Inventada, 5", "phone": "+34 600 00 00 05", "kind": "independent", "batch": "demo", "origin": "Invented sample data"},
+  {"name": "Centro Demo Fresno", "city": "Madrid", "area": "Chamberí", "address": "Calle Inventada, 6", "phone": "+34 600 00 00 06", "kind": "independent", "batch": "demo", "origin": "Invented sample data"}
+]

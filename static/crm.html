@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRM | Atelier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="/static/crm.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <div class="bar-left">
+      <a class="back" href="/">Volver al panel</a>
+      <nav class="tabs" aria-label="Partes del CRM">
+        <a href="#hoy" id="tab-hoy">Hoy</a>
+        <a href="#clinicas" id="tab-clinicas">Clínicas</a>
+      </nav>
+    </div>
+    <div class="brand">
+      <span class="wordmark">Atelier</span>
+      <span class="by">by</span>
+      <img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="111" height="30">
+    </div>
+  </div>
+
+  <div id="error" role="alert"></div>
+
+  <!-- Hoy: what the CRM asks of me today -->
+  <main id="view-hoy">
+    <header class="opening">
+      <p class="whose" id="day-line">CRM de clínicas</p>
+      <h1 id="headline">Cargando…</h1>
+      <p class="lede" id="lede"></p>
+      <div class="stats">
+        <span class="stat"><b id="count-to-contact">0</b> por contactar</span>
+        <span class="stat"><b id="count-open">0</b> en conversación</span>
+        <span class="stat"><b id="count-clients">0</b> clientes</span>
+        <span class="stat"><b id="count-written">0</b> escritas hoy</span>
+      </div>
+    </header>
+
+    <section id="late-section" aria-labelledby="late-title" hidden>
+      <div class="slipped">
+        <h2 id="late-title">Se te ha pasado</h2>
+        <ul class="todo-list" id="late"></ul>
+      </div>
+    </section>
+
+    <section id="due-section" aria-labelledby="due-title">
+      <h2 id="due-title">Para hoy</h2>
+      <div id="due"></div>
+    </section>
+
+    <section id="adrift-section" aria-labelledby="adrift-title" hidden>
+      <h2 id="adrift-title">Sin próximo paso</h2>
+      <p class="section-note">Hay una conversación en marcha y ningún día puesto para seguirla. Ponles día para que no se pierdan.</p>
+      <ul class="todo-list" id="adrift"></ul>
+    </section>
+
+    <section id="fresh-section" aria-labelledby="fresh-title" hidden>
+      <h2 id="fresh-title">Las siguientes por contactar</h2>
+      <p class="section-note">Cinco clínicas a las que todavía no has escrito. Salen primero las que más encajan contigo y las independientes.</p>
+      <ul class="todo-list" id="fresh"></ul>
+    </section>
+
+    <section id="coming-section" aria-labelledby="coming-title" hidden>
+      <h2 id="coming-title">Los próximos siete días</h2>
+      <ul class="todo-list" id="coming"></ul>
+    </section>
+  </main>
+
+  <!-- Clínicas: the whole list, with search and filters -->
+  <main id="view-clinicas" hidden>
+    <header class="opening">
+      <p class="whose">CRM de clínicas</p>
+      <h1 id="list-headline">Cargando…</h1>
+    </header>
+
+    <section aria-label="Lista de clínicas">
+      <div class="notice" id="import-notice" hidden>
+        <p id="import-text"></p>
+        <button id="import-button">Traerlas al CRM</button>
+      </div>
+
+      <div class="filters" id="filters">
+        <div class="wide"><label for="f-search">Buscar</label><input id="f-search" type="search" placeholder="Nombre, calle o nota"></div>
+        <div><label for="f-area">Barrio</label><select id="f-area"></select></div>
+        <div><label for="f-kind">Tipo</label><select id="f-kind"></select></div>
+        <div><label for="f-stage">Etapa</label><select id="f-stage"></select></div>
+        <div><label for="f-batch">Tanda</label><select id="f-batch"></select></div>
+      </div>
+      <div class="count-line" id="count-line">
+        <span id="count" aria-live="polite"></span>
+        <label class="check"><input type="checkbox" id="f-missing">Solo las que no tienen web ni Instagram</label>
+      </div>
+
+      <div class="table-wrap">
+        <table class="clinics">
+          <thead>
+            <tr>
+              <th data-sort="name"><button type="button">Clínica</button></th>
+              <th data-sort="area"><button type="button">Barrio</button></th>
+              <th data-sort="stage"><button type="button">Etapa</button></th>
+              <th data-sort="last_contact_on"><button type="button">Último contacto</button></th>
+              <th data-sort="next_step_on"><button type="button">Próximo paso</button></th>
+              <th>Abrir</th>
+            </tr>
+          </thead>
+          <tbody id="clinics"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="no-clinics" hidden></p>
+
+      <details>
+        <summary>Añadir una clínica</summary>
+        <form id="clinic-form">
+          <div class="row">
+            <div><label for="n-name">Nombre</label><input id="n-name" required maxlength="160"></div>
+            <div><label for="n-area">Barrio</label><input id="n-area" maxlength="80"></div>
+            <div><label for="n-city">Ciudad</label><input id="n-city" maxlength="80" value="Madrid"></div>
+          </div>
+          <div class="row">
+            <div><label for="n-address">Dirección</label><input id="n-address" maxlength="300"></div>
+            <div><label for="n-phone">Teléfono</label><input id="n-phone" maxlength="40"></div>
+          </div>
+          <div class="row">
+            <div><label for="n-website">Web</label><input id="n-website" maxlength="300" placeholder="clinica.es"></div>
+            <div><label for="n-instagram">Instagram</label><input id="n-instagram" maxlength="300" placeholder="@clinica"></div>
+            <div>
+              <label for="n-kind">Tipo</label>
+              <select id="n-kind">
+                <option value="">Sin decidir</option>
+                <option value="independent">Independiente</option>
+                <option value="chain">Cadena o grande</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-actions"><button type="submit" class="quiet">Guardar clínica</button></div>
+        </form>
+      </details>
+    </section>
+  </main>
+
+</div>
+<div id="flash" role="status"></div>
+
+<script src="/static/crm.js"></script>
+<script>
+let clinics = [];          // every clinic, as the server gave them
+let today = isoDay(new Date());
+let sort = { key: "name", up: true };
+
+// ---- The two views: #hoy and #clinicas ----
+
+function showView() {
+  const list = location.hash === "#clinicas";
+  $("view-hoy").hidden = list;
+  $("view-clinicas").hidden = !list;
+  $("tab-hoy").removeAttribute("aria-current");
+  $("tab-clinicas").removeAttribute("aria-current");
+  $(list ? "tab-clinicas" : "tab-hoy").setAttribute("aria-current", "page");
+  document.title = (list ? "Clínicas" : "Hoy") + " | CRM | Atelier";
+}
+
+// ---- Hoy ----
+
+// The headline tells me the state of the day; the key word gets the brand marker.
+function setHeadline(data) {
+  const late = data.late.length, due = data.due.length;
+  const headline = $("headline");
+  if (late) {
+    headline.replaceChildren(late === 1 ? "1 seguimiento se te ha " : late + " seguimientos se te han ", el("em", "", "pasado"), ".");
+    $("lede").textContent = due ? "Y hoy tocan " + due + " más. Empieza por los de arriba." : "Empieza por ahí: son los que más se enfrían.";
+  } else if (due) {
+    headline.replaceChildren("Hoy tienes ", el("em", "", due === 1 ? "1 seguimiento" : due + " seguimientos"), ".");
+    $("lede").textContent = "Cuando escribas a cada una, apunta el contacto: la etapa se mueve sola.";
+  } else if (!data.counts.total) {
+    headline.replaceChildren("Tu lista está ", el("em", "", "vacía"), ".");
+    $("lede").textContent = "Entra en «Clínicas» para traer o añadir las primeras.";
+  } else {
+    headline.replaceChildren("Hoy no hay ", el("em", "", "seguimientos"), ".");
+    $("lede").textContent = data.fresh.length
+      ? "Buen día para abrir conversaciones nuevas: abajo tienes las siguientes clínicas."
+      : "Todo lo que tiene fecha está al día.";
+  }
+}
+
+// One line of "Hoy". mode says which list it is in: late, due, adrift, fresh or coming.
+function todoRow(clinic, mode) {
+  const item = el("li", "todo");
+  const main = el("div");
+  main.append(link(clinic.name, "/crm/clinics/" + clinic.id, "todo-name"));
+
+  if (mode === "fresh") {
+    main.append(el("div", "todo-step", [clinic.address, clinic.area].filter(Boolean).join(", ")));
+  } else {
+    main.append(el("div", "todo-step", clinic.next_step || "Falta decidir qué toca y cuándo."));
+  }
+
+  const meta = el("div", "todo-meta");
+  if (clinic.next_step_on) meta.append(el("span", "when" + (mode === "late" ? " late" : ""), sayDay(clinic.next_step_on, today)));
+  meta.append(stagePill(clinic));
+  if (mode === "fresh") {
+    if (clinic.kind) meta.append(el("span", "", CLINIC_KINDS[clinic.kind]));
+    if (!isWeb(clinic.website) && !isWeb(clinic.instagram)) meta.append(el("span", "", "Falta su web y su Instagram"));
+  } else {
+    if (clinic.area) meta.append(el("span", "", clinic.area));
+    if (clinic.last_contact_on) meta.append(el("span", "", "Último contacto: " + sayDay(clinic.last_contact_on, today)));
+  }
+  main.append(meta);
+
+  const side = el("div", "todo-side");
+  side.append(reachLinks(clinic));
+  const note = el("button", "quiet small", "Apuntar contacto");
+  note.onclick = () => { showError(""); openContact(clinic.id, refresh); };
+  side.append(note);
+  if (mode !== "fresh") {
+    // Move the day without opening the clinic. In "Sin próximo paso" it sets the first day.
+    const move = el("select");
+    move.setAttribute("aria-label", mode === "adrift" ? "Poner día" : "Posponer");
+    move.append(option("", mode === "adrift" ? "Poner día…" : "Posponer…"),
+      option("1", "Mañana"), option("3", "En 3 días"), option("7", "En una semana"));
+    move.onchange = () => {
+      if (!move.value) return;
+      const day = addDays(today, Number(move.value));
+      act(() => send("POST", "/api/crm/clinics/" + clinic.id + "/next-step", { next_step: clinic.next_step, next_step_on: day }),
+        refresh, clinic.name + ": nuevo día, " + shortDay(day) + ".");
+    };
+    side.append(move);
+  }
+  item.append(main, side);
+  return item;
+}
+
+function fillList(id, rows, mode) {
+  $(id).replaceChildren(...rows.map((clinic) => todoRow(clinic, mode)));
+  const section = $(id + "-section");
+  if (id !== "due") section.hidden = rows.length === 0;
+}
+
+function renderToday(data) {
+  today = data.today;
+  const long = parseDay(today).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  $("day-line").textContent = long.charAt(0).toUpperCase() + long.slice(1);
+  setHeadline(data);
+  $("count-to-contact").textContent = data.counts.to_contact;
+  $("count-open").textContent = data.counts.open;
+  $("count-clients").textContent = data.counts.clients;
+  $("count-written").textContent = data.counts.written_today;
+
+  fillList("late", data.late, "late");
+  fillList("adrift", data.adrift, "adrift");
+  fillList("fresh", data.fresh, "fresh");
+  fillList("coming", data.coming, "coming");
+  if (data.due.length) {
+    const list = el("ul", "todo-list");
+    list.append(...data.due.map((clinic) => todoRow(clinic, "due")));
+    $("due").replaceChildren(list);
+  } else {
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "nada para hoy"),
+      el("p", "", "Aquí sale cada clínica el día que le toca. Tú pones el día al apuntar un contacto."));
+    $("due").replaceChildren(block);
+  }
+}
+
+// ---- Clínicas ----
+
+const FILTERS = ["f-search", "f-area", "f-kind", "f-stage", "f-batch"];
+
+// The choices of each filter come from the clinics themselves.
+function fillFilters() {
+  const uniques = (key) => [...new Set(clinics.map((clinic) => clinic[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const fill = (id, all, values, label) => {
+    const before = $(id).value;
+    $(id).replaceChildren(option("", all), ...values.map((value) => option(value, label ? label(value) : value)));
+    $(id).value = values.includes(before) ? before : "";
+  };
+  fill("f-area", "Todos", uniques("area"));
+  fill("f-kind", "Todos", Object.keys(CLINIC_KINDS), (kind) => CLINIC_KINDS[kind]);
+  fill("f-stage", "Todas", Object.keys(STAGES), (stage) => STAGES[stage]);
+  fill("f-batch", "Todas", uniques("batch"));
+}
+
+// Coming back from a clinic's card, the filters are as I left them.
+function rememberFilters() {
+  try {
+    const kept = Object.fromEntries(FILTERS.map((id) => [id, $(id).value]));
+    kept["f-missing"] = $("f-missing").checked;
+    sessionStorage.setItem("atelier.crm.filters", JSON.stringify(kept));
+  } catch (error) { /* the list works the same without it */ }
+}
+
+function restoreFilters() {
+  try {
+    const kept = JSON.parse(sessionStorage.getItem("atelier.crm.filters") || "{}");
+    FILTERS.forEach((id) => { if (kept[id]) $(id).value = kept[id]; });
+    $("f-missing").checked = Boolean(kept["f-missing"]);
+  } catch (error) { /* same */ }
+}
+
+function matches(clinic) {
+  const words = $("f-search").value.trim().toLowerCase();
+  const text = [clinic.name, clinic.address, clinic.notes, clinic.treatments, clinic.area].join(" ").toLowerCase();
+  return (!words || text.includes(words))
+    && (!$("f-area").value || clinic.area === $("f-area").value)
+    && (!$("f-kind").value || clinic.kind === $("f-kind").value)
+    && (!$("f-stage").value || clinic.stage === $("f-stage").value)
+    && (!$("f-batch").value || clinic.batch === $("f-batch").value)
+    && (!$("f-missing").checked || (!isWeb(clinic.website) && !isWeb(clinic.instagram)));
+}
+
+// Order by the column I clicked. Clinics with nothing in that column go last.
+function inOrder(rows) {
+  const value = (clinic) => sort.key === "stage" ? Object.keys(STAGES).indexOf(clinic.stage) : clinic[sort.key];
+  return [...rows].sort((a, b) => {
+    const one = value(a), other = value(b);
+    const empty = (thing) => thing === null || thing === "";
+    if (empty(one) || empty(other)) return empty(one) - empty(other) || a.name.localeCompare(b.name, "es");
+    const order = typeof one === "number" ? one - other : String(one).localeCompare(String(other), "es");
+    return (sort.up ? order : -order) || a.name.localeCompare(b.name, "es");
+  });
+}
+
+function clinicRow(clinic) {
+  const row = el("tr", clinic.do_not_contact ? "off" : "");
+  const name = el("td");
+  name.append(link(clinic.name, "/crm/clinics/" + clinic.id, "clinic-name"));
+  if (clinic.address) name.append(el("div", "sub", clinic.address));
+  if (clinic.do_not_contact) name.append(el("span", "pill stop", "No contactar"));
+
+  const area = el("td");
+  area.append(el("div", "", clinic.area || "—"));
+  if (clinic.kind === "chain") area.append(el("div", "sub", CLINIC_KINDS.chain));
+
+  const stage = el("td");
+  stage.append(stagePill(clinic));
+
+  const last = el("td", clinic.last_contact_on ? "nowrap" : "blank", clinic.last_contact_on ? sayDay(clinic.last_contact_on, today) : "—");
+
+  const next = el("td");
+  if (clinic.next_step_on) {
+    next.append(el("div", "", clinic.next_step));
+    const late = clinic.next_step_on < today;
+    next.append(el("span", "when sub" + (late ? " late" : ""), sayDay(clinic.next_step_on, today)));
+  } else {
+    next.className = "blank";
+    next.append("—");
+  }
+
+  const open = el("td");
+  open.append(reachLinks(clinic));
+  row.append(name, area, stage, last, next, open);
+  return row;
+}
+
+function renderList() {
+  const shown = inOrder(clinics.filter(matches));
+  $("clinics").replaceChildren(...shown.map(clinicRow));
+  document.querySelectorAll(".clinics th[data-sort]").forEach((head) => {
+    if (head.dataset.sort === sort.key) head.setAttribute("aria-sort", sort.up ? "ascending" : "descending");
+    else head.removeAttribute("aria-sort");
+  });
+  const total = clinics.length;
+  $("list-headline").replaceChildren(...(total
+    ? [total === 1 ? "1 clínica en tu " : total + " clínicas en tu ", el("em", "", "lista"), "."]
+    : ["Todavía no hay ", el("em", "", "clínicas"), "."]));
+  $("count").textContent = shown.length === total ? "Se ven todas." : "Se ven " + shown.length + " de " + total + ".";
+  // With no clinics at all there is nothing to filter.
+  $("filters").hidden = $("count-line").hidden = total === 0;
+  $("no-clinics").hidden = shown.length > 0;
+  $("no-clinics").textContent = total ? "Ninguna clínica cumple esos filtros." : "Añade la primera clínica aquí abajo.";
+  document.querySelector(".table-wrap").hidden = shown.length === 0;
+}
+
+// Clinics waiting in the private folder: offer to bring them in.
+async function checkImport() {
+  try {
+    const waiting = await api("/api/crm/import");
+    $("import-notice").hidden = waiting.new === 0;
+    $("import-text").textContent = waiting.new === 1
+      ? "Hay 1 clínica nueva preparada en tu ordenador."
+      : "Hay " + waiting.new + " clínicas nuevas preparadas en tu ordenador.";
+  } catch (error) {
+    $("import-notice").hidden = true;
+    showError(error.message);
+  }
+}
+
+$("import-button").addEventListener("click", async () => {
+  $("import-button").disabled = true;
+  await act(async () => {
+    const result = await send("POST", "/api/crm/import");
+    flash(result.added === 1 ? "Ha entrado 1 clínica." : "Han entrado " + result.added + " clínicas.");
+  }, refresh);
+  $("import-button").disabled = false;
+});
+
+$("clinic-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  showError("");
+  try {
+    const clinic = await send("POST", "/api/crm/clinics", {
+      name: $("n-name").value, area: $("n-area").value, city: $("n-city").value,
+      address: $("n-address").value, phone: $("n-phone").value,
+      website: $("n-website").value, instagram: $("n-instagram").value, kind: $("n-kind").value,
+    });
+    location.href = "/crm/clinics/" + clinic.id;  // straight to its card, to fill in the rest
+  } catch (error) { showError(error.message); }
+});
+
+FILTERS.concat("f-missing").forEach((id) => $(id).addEventListener("input", () => { rememberFilters(); renderList(); }));
+document.querySelectorAll(".clinics th[data-sort] button").forEach((button) => {
+  button.addEventListener("click", () => {
+    const key = button.parentElement.dataset.sort;
+    sort = { key, up: sort.key === key ? !sort.up : true };
+    renderList();
+  });
+});
+
+async function refresh() {
+  try {
+    const [data, list] = await Promise.all([api("/api/crm/today"), api("/api/crm/clinics")]);
+    clinics = list;
+    renderToday(data);
+    fillFilters();
+    restoreFilters();
+    renderList();
+  } catch (error) { showError("No se pudo cargar el CRM: " + error.message); }
+  checkImport();
+}
+
+window.addEventListener("hashchange", showView);
+showView();
+refresh();
+</script>
+</body>
+</html>

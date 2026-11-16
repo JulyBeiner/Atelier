@@ -39,6 +39,9 @@
   /* Top bar */
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .wordmark { font-family: var(--serif); font-size: 26px; letter-spacing: -0.01em; }
+  .bar-left { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .bar-link { font-weight: 500; text-decoration: none; border: 1px solid rgba(94, 100, 64, 0.35); border-radius: 999px; padding: 7px 16px; }
+  .bar-link:hover { border-color: var(--olive-deep); }
   /* "by" is a handwritten note and may tilt. The logo never does: it is not rotated or stretched. */
   .by { display: flex; align-items: center; gap: 9px; }
   .by span { font-family: var(--hand); font-size: 20px; color: var(--olive-deep); transform: rotate(-3deg); }
@@ -65,6 +68,8 @@
     font-size: 13px; color: var(--muted);
   }
   .stat b { font-family: var(--serif); font-weight: 400; font-size: 20px; color: var(--ink); line-height: 1; }
+  a.stat { text-decoration: none; }
+  a.stat:hover { border-color: var(--olive-deep); }
 
   /* Section headings */
   h2 {
@@ -191,7 +196,10 @@
 <div class="wrap">
 
   <div class="bar">
-    <div class="wordmark">Atelier</div>
+    <div class="bar-left">
+      <div class="wordmark">Atelier</div>
+      <a class="bar-link" href="/crm">CRM de clínicas</a>
+    </div>
     <div class="by"><span>by</span><img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="126" height="34"></div>
   </div>
 
@@ -202,6 +210,7 @@
       <span class="stat"><b id="count-pending">0</b> para aprobar</span>
       <span class="stat"><b id="count-done">0</b> hechas</span>
       <span class="stat"><b id="count-clients">0</b> clientes</span>
+      <a class="stat" href="/crm" title="Clínicas del CRM que tocan hoy o se han pasado"><b id="count-followups">0</b> <span id="followups-word">seguimientos hoy</span></a>
       <span class="stat" title="Gasto de los agentes en la API de Claude"><b id="usage-spent">0,00 $</b> <span id="usage-budget">de API</span></span>
     </div>
     <div id="error" role="alert"></div>
@@ -452,7 +461,18 @@ async function checkAgent() {
   } catch (error) { /* the panel works the same without this line */ }
 }
 
+// The CRM lives on its own page; here only how many clinics need me today. The panel works without it.
+async function countFollowUps() {
+  try {
+    const crm = await api("/api/crm/today");
+    const waiting = crm.late.length + crm.due.length;
+    $("count-followups").textContent = waiting;
+    $("followups-word").textContent = waiting === 1 ? "seguimiento hoy" : "seguimientos hoy";
+  } catch (error) { /* the panel works the same without this number */ }
+}
+
 async function refresh() {
+  countFollowUps();
   try {
     const [clients, tasks, usage, reports] = await Promise.all(
       [api("/api/clients"), api("/api/tasks"), api("/api/usage"), api("/api/reports")]);

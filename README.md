@@ -26,6 +26,17 @@ The report waits in the panel until I approve or reject it.
 
 The candidates wait in the panel. I mark the ones that inspire me and what I like about each (design, kind of page, animations, effects), and I can add links of my own, which is free.
 
+**The CRM, first part.** My own place for the clinics I want as clients, so that I need no other tool:
+
+- "Hoy" opens the day: the follow-ups I let slip, today's, the conversations with no next step, and the next clinics to write to
+- the list of clinics, with search and filters by neighbourhood, kind, stage and batch
+- one card per clinic: its details, the people in it (who decides and how they like to be reached), its star treatments, its Google reviews and how well it fits me
+- a history of every contact. Noting a contact moves the clinic along the path by itself: to contact, contacted, replied, call booked, call done, proposal sent, client
+- always a next step with a day. After a diagnosis call the written proposal is set for the next day, as in my method
+- "do not contact", and a button that erases a clinic with its people and its history when someone asks me to
+
+Atelier never sends a message. The links only open WhatsApp, the phone or the mail on my computer, and I write.
+
 ## Run it
 
 Built with Python 3.14 on Windows. The screenshots use the Edge or Chrome already on the computer.
@@ -43,7 +54,9 @@ Open `.env` and paste two keys: `ANTHROPIC_API_KEY` (the agent needs it) and `PA
 fastapi dev main.py
 ```
 
-The panel is at http://127.0.0.1:8000. To check that screenshots work: `python capture.py --check`.
+The panel is at http://127.0.0.1:8000 and the CRM at http://127.0.0.1:8000/crm. To check that screenshots work: `python capture.py --check`.
+
+The CRM starts empty. To try it with invented clinics, copy `sample_data/clinics-demo.json` into a folder called `private` and open the list of clinics: it offers to bring them in.
 
 ## What it costs
 
@@ -53,16 +66,20 @@ The agent uses the Claude API, which costs money: about 0.16 USD per in-depth an
 
 The database, the reports and candidates with their screenshots and the `.env` file with the keys stay on my computer: git ignores them. No real client data goes in this repository.
 
+The clinics and the people of the CRM are real, so they live only in the local database. A list of clinics waiting to come in sits in `private/`, which git ignores too, and the file is deleted once they are in.
+
 ## The files
 
 - `main.py` — the API and the pages of the panel
-- `database.py` — SQLite storage: clients, tasks, reports and API spending
+- `database.py` — SQLite storage: clients, tasks, reports, API spending and the CRM
+- `crm.py` — the CRM: clinics, people, the history of contacts, next steps and what to do today
 - `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
 - `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts
 - `capture.py` — screenshots on desktop and on mobile, with Playwright
 - `pagespeed.py` — Google PageSpeed scores
-- `static/` — the panel (`index.html`), the report page (`report.html`) and the inspiration page (`inspiration.html`)
+- `static/` — the panel (`index.html`), the report page (`report.html`), the inspiration page (`inspiration.html`) and the CRM (`crm.html`, `clinic.html`, with their shared `crm.css` and `crm.js`)
+- `sample_data/` — invented clinics for trying the CRM
 
 ## Departments
 1. **Brand** — branding, logo, colors, typography

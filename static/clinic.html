@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clínica | CRM | Atelier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="/static/crm.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <div class="bar-left">
+      <a class="back" href="/">Volver al panel</a>
+      <nav class="tabs" aria-label="Partes del CRM">
+        <a href="/crm#hoy">Hoy</a>
+        <a href="/crm#clinicas">Clínicas</a>
+      </nav>
+    </div>
+    <div class="brand">
+      <span class="wordmark">Atelier</span>
+      <span class="by">by</span>
+      <img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="111" height="30">
+    </div>
+  </div>
+
+  <header class="opening">
+    <p class="whose" id="whose">Clínica</p>
+    <h1 id="name">Cargando…</h1>
+    <div class="reach-line" id="reach"></div>
+  </header>
+
+  <div id="error" role="alert"></div>
+
+  <main id="sheet" hidden>
+    <section aria-labelledby="path-title">
+      <h2 id="path-title">Dónde estamos</h2>
+      <ol class="track" id="track"></ol>
+      <div class="off-path">
+        <span class="sub">Fuera del camino:</span>
+        <button type="button" class="quiet small" id="to-later">Más adelante</button>
+        <button type="button" class="quiet small" id="to-no">No interesada</button>
+        <button type="button" class="quiet small" id="stop-button">No contactar</button>
+      </div>
+      <form class="reason" id="reason-form" hidden>
+        <input id="reason" maxlength="500" aria-label="Motivo">
+        <button type="submit" class="quiet small" id="reason-save">Guardar</button>
+        <button type="button" class="linkish" id="reason-cancel">Cancelar</button>
+      </form>
+      <div class="stop-note" id="stop-note" hidden>
+        <p>Esta clínica está marcada como «No contactar»: no sale en «Hoy» y no tiene seguimientos.</p>
+      </div>
+    </section>
+
+    <div class="sheet">
+      <div>
+        <section aria-labelledby="step-title">
+          <div class="card">
+            <h2 id="step-title">Próximo paso</h2>
+            <p class="sub" id="step-say"></p>
+            <form class="step-form" id="step-form">
+              <div><label for="step-text">Qué toca</label><input id="step-text" maxlength="300" placeholder="Por ejemplo: volver a escribir"></div>
+              <div><label for="step-day">Qué día</label><input type="date" id="step-day"></div>
+              <div class="form-actions">
+                <button type="submit" class="quiet small">Guardar paso</button>
+                <button type="button" class="linkish" id="step-clear">Quitar el paso</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section aria-labelledby="history-title">
+          <div class="section-head">
+            <h2 id="history-title">Historial</h2>
+            <button type="button" id="note-contact">Apuntar contacto</button>
+          </div>
+          <ul class="history" id="history"></ul>
+        </section>
+      </div>
+
+      <div>
+        <section aria-labelledby="people-title">
+          <h2 id="people-title">Personas</h2>
+          <ul class="people" id="people"></ul>
+          <details id="person-details">
+            <summary id="person-summary">Añadir persona</summary>
+            <form id="person-form">
+              <div class="row">
+                <div><label for="p-name">Nombre</label><input id="p-name" required maxlength="120"></div>
+                <div><label for="p-role">Cargo</label><input id="p-role" maxlength="120" placeholder="Directora, recepción…"></div>
+              </div>
+              <div class="row">
+                <div><label for="p-phone">Teléfono</label><input id="p-phone" maxlength="40"></div>
+                <div><label for="p-email">Correo</label><input id="p-email" type="email" maxlength="200"></div>
+              </div>
+              <div class="row">
+                <div><label for="p-instagram">Instagram</label><input id="p-instagram" maxlength="300" placeholder="@nombre"></div>
+                <div><label for="p-prefers">Prefiere que le escriba por</label><select id="p-prefers"></select></div>
+              </div>
+              <label class="check"><input type="checkbox" id="p-decides">Es quien decide</label>
+              <div><label for="p-notes">Notas</label><textarea id="p-notes" rows="2" maxlength="2000"></textarea></div>
+              <div class="form-actions">
+                <button type="submit" class="quiet small" id="person-save">Guardar persona</button>
+                <button type="button" class="linkish" id="person-cancel" hidden>Cancelar</button>
+              </div>
+            </form>
+          </details>
+        </section>
+
+        <section aria-labelledby="card-title">
+          <h2 id="card-title">Ficha</h2>
+          <form id="card-form">
+            <div><label for="k-name">Nombre</label><input id="k-name" required maxlength="160"></div>
+            <div class="row">
+              <div><label for="k-area">Barrio</label><input id="k-area" maxlength="80"></div>
+              <div><label for="k-city">Ciudad</label><input id="k-city" maxlength="80"></div>
+            </div>
+            <div><label for="k-address">Dirección</label><input id="k-address" maxlength="300"></div>
+            <div class="row">
+              <div><label for="k-phone">Teléfono</label><input id="k-phone" maxlength="40"></div>
+              <div><label for="k-email">Correo</label><input id="k-email" type="email" maxlength="200"></div>
+            </div>
+            <div class="row">
+              <div><label for="k-website">Web</label><input id="k-website" maxlength="300" placeholder="clinica.es"></div>
+              <div><label for="k-instagram">Instagram</label><input id="k-instagram" maxlength="300" placeholder="@clinica"></div>
+            </div>
+            <div><label for="k-treatments">Tratamientos estrella</label><input id="k-treatments" maxlength="1000" placeholder="Bótox, labios, láser…"></div>
+            <div class="row">
+              <div><label for="k-rating">Nota en Google (de 0 a 5)</label><input id="k-rating" type="number" min="0" max="5" step="0.1"></div>
+              <div><label for="k-reviews">Número de reseñas</label><input id="k-reviews" type="number" min="0" step="1"></div>
+            </div>
+            <div class="row">
+              <div>
+                <label for="k-kind">Tipo</label>
+                <select id="k-kind">
+                  <option value="">Sin decidir</option>
+                  <option value="independent">Independiente</option>
+                  <option value="chain">Cadena o grande</option>
+                </select>
+              </div>
+              <div>
+                <label for="k-fit">Cuánto encaja conmigo</label>
+                <select id="k-fit">
+                  <option value="">Sin valorar</option>
+                  <option value="5">5, mucho</option>
+                  <option value="4">4</option>
+                  <option value="3">3</option>
+                  <option value="2">2</option>
+                  <option value="1">1, poco</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <div><label for="k-origin">De dónde salió</label><input id="k-origin" maxlength="200" placeholder="Mi estudio, una amiga…"></div>
+              <div><label for="k-batch">Tanda</label><input id="k-batch" maxlength="40"></div>
+            </div>
+            <div><label for="k-notes">Notas</label><textarea id="k-notes" rows="4" maxlength="8000"></textarea></div>
+            <div class="form-actions">
+              <button type="submit" class="quiet">Guardar ficha</button>
+              <span class="saved" id="card-saved" hidden>guardado</span>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+
+    <div class="danger-zone">
+      <p>Si esta clínica o alguien de ella te pide que borres sus datos, aquí se borra todo: la ficha, las personas y el historial. No se puede deshacer.</p>
+      <button type="button" class="danger small" id="delete">Borrar esta clínica</button>
+    </div>
+  </main>
+
+</div>
+<div id="flash" role="status"></div>
+
+<script src="/static/crm.js"></script>
+<script>
+const clinicId = Number(location.pathname.split("/").pop());
+const today = isoDay(new Date());
+let clinic = null;
+let editing = null;     // the person whose data is in the form, when I am changing one
+let pendingStage = "";  // the way off the path I clicked, while the reason is being typed
+
+// The fields of the card: the id on the page and its name in the API.
+const CARD = {
+  "k-name": "name", "k-area": "area", "k-city": "city", "k-address": "address", "k-phone": "phone",
+  "k-email": "email", "k-website": "website", "k-instagram": "instagram", "k-treatments": "treatments",
+  "k-kind": "kind", "k-origin": "origin", "k-batch": "batch", "k-notes": "notes",
+};
+const PERSON = {
+  "p-name": "name", "p-role": "role", "p-phone": "phone", "p-email": "email",
+  "p-instagram": "instagram", "p-prefers": "prefers", "p-notes": "notes",
+};
+
+// ---- Drawing the page ----
+
+function renderHeader() {
+  document.title = clinic.name + " | CRM | Atelier";
+  const place = [clinic.area, clinic.city].filter(Boolean).join(", ");
+  const facts = [place, CLINIC_KINDS[clinic.kind], clinic.batch ? "Tanda " + clinic.batch : ""].filter(Boolean);
+  $("whose").textContent = facts.length ? facts.join(". ") + "." : "Clínica";
+  $("name").textContent = clinic.name;
+
+  const reach = $("reach");
+  reach.replaceChildren();
+  if (clinic.address) reach.append(el("span", "", clinic.address));
+  if (clinic.phone) reach.append(el("span", "", clinic.phone));
+  reach.append(reachLinks(clinic));
+  // Google Maps is where the reviews are: handy for filling in the card.
+  const where = [clinic.name, clinic.address, clinic.city].filter(Boolean).join(", ");
+  reach.lastChild.append(link("Google Maps", "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(where)));
+}
+
+function renderPath() {
+  const at = PATH.indexOf(clinic.stage);  // -1 when the clinic is off the path
+  $("track").replaceChildren(...PATH.map((stage, index) => {
+    const stop = el("li", index < at ? "passed" : index === at ? "current" : "");
+    const button = el("button", "", STAGES[stage]);
+    button.type = "button";
+    if (index === at) button.setAttribute("aria-current", "step");
+    button.onclick = () => changeStage(stage, "");
+    stop.append(button);
+    return stop;
+  }));
+  // On a narrow screen the path scrolls sideways: bring the current stop into view.
+  const current = $("track").querySelector(".current");
+  if (current) $("track").scrollLeft = current.offsetLeft - $("track").clientWidth / 2 + current.clientWidth / 2;
+  $("to-later").textContent = clinic.stage === "later" ? "Está en «Más adelante»" : "Más adelante";
+  $("to-later").disabled = clinic.stage === "later";
+  $("to-no").textContent = clinic.stage === "not_interested"
+    ? "Está en «No interesada»" + (clinic.lost_reason ? ": " + clinic.lost_reason : "") : "No interesada";
+  $("to-no").disabled = clinic.stage === "not_interested";
+  $("stop-button").textContent = clinic.do_not_contact ? "Quitar «No contactar»" : "No contactar";
+  $("stop-note").hidden = !clinic.do_not_contact;
+}
+
+function renderStep() {
+  const day = clinic.next_step_on;
+  let say = "No hay nada pendiente con esta clínica.";
+  if (day && day < today) say = "Tocaba " + sayDay(day, today) + " (" + shortDay(day) + ").";
+  else if (day) say = "Toca " + sayDay(day, today) + " (" + shortDay(day) + ").";
+  else if (PATH.indexOf(clinic.stage) > 0 && clinic.stage !== "client") say = "Hay una conversación en marcha y ningún día puesto para seguirla.";
+  $("step-say").textContent = say;
+  if (!$("step-form").contains(document.activeElement)) {
+    $("step-text").value = clinic.next_step || "";
+    $("step-day").value = day || "";
+  }
+  $("step-clear").hidden = !day;
+}
+
+const CHANNEL_SAY = {
+  instagram: "por Instagram", whatsapp: "por WhatsApp", email: "por correo",
+  phone: "por teléfono", linkedin: "por LinkedIn", in_person: "en persona",
+};
+
+function historyItem(entry) {
+  const item = el("li");
+  item.append(el("div", "day", shortDay(entry.happened_on)));
+  const body = el("div");
+  let what = KINDS[entry.kind] || entry.kind;
+  if (entry.kind === "stage") what = "Pasa a «" + (STAGES[entry.stage_to] || entry.stage_to) + "»";
+  if (entry.channel) what += " " + CHANNEL_SAY[entry.channel];
+  if (entry.person_name) what += ", con " + entry.person_name;
+  body.append(el("div", "what", what));
+  if (entry.summary) body.append(el("div", "text", entry.summary));
+  if (entry.kind !== "stage" && entry.stage_to) body.append(el("div", "sub", "La clínica pasó a «" + STAGES[entry.stage_to] + "»."));
+  const remove = el("button", "remove", "Quitar");
+  remove.type = "button";
+  askTwice(remove, "¿Quitar esta línea?", () => act(() => send("DELETE", "/api/crm/history/" + entry.id), load));
+  item.append(body, remove);
+  return item;
+}
+
+function renderHistory() {
+  $("history").replaceChildren(...(clinic.history.length
+    ? clinic.history.map(historyItem)
+    : [el("li", "empty", "Todavía no hay contactos. Cuando escribas a esta clínica, apúntalo aquí.")]));
+}
+
+function personItem(person) {
+  const item = el("li");
+  const name = el("div", "name", person.name + " ");
+  if (person.decides) name.append(el("span", "pill", "Decide"));
+  item.append(name);
+  if (person.role) item.append(el("div", "sub", person.role));
+  const reach = reachLinks(person);
+  if (reach.children.length) item.append(reach);
+  if (person.prefers) item.append(el("div", "sub", "Prefiere que le escriba " + CHANNEL_SAY[person.prefers] + "."));
+  if (person.notes) item.append(el("div", "sub", person.notes));
+
+  const actions = el("div", "person-actions");
+  const edit = el("button", "linkish", "Cambiar");
+  edit.type = "button";
+  edit.onclick = () => editPerson(person);
+  const remove = el("button", "linkish", "Borrar");
+  remove.type = "button";
+  askTwice(remove, "¿Borrar a " + person.name + "?", () => act(() => send("DELETE", "/api/crm/people/" + person.id), load));
+  actions.append(edit, remove);
+  item.append(actions);
+  return item;
+}
+
+function renderPeople() {
+  $("people").replaceChildren(...(clinic.people.length
+    ? clinic.people.map(personItem)
+    : [el("li", "empty", "Aún no sabes con quién hablar aquí. Apunta a la primera persona cuando la tengas.")]));
+}
+
+function fillCard() {
+  Object.entries(CARD).forEach(([id, key]) => { $(id).value = clinic[key] ?? ""; });
+  $("k-rating").value = clinic.google_rating ?? "";
+  $("k-reviews").value = clinic.google_reviews ?? "";
+  $("k-fit").value = clinic.fit ?? "";
+}
+
+function render(withCard) {
+  $("sheet").hidden = false;
+  renderHeader();
+  renderPath();
+  renderStep();
+  renderHistory();
+  renderPeople();
+  if (withCard) fillCard();
+}
+
+// ---- Doing things ----
+
+async function load(withCard) {
+  try {
+    clinic = await api("/api/crm/clinics/" + clinicId);
+    render(withCard === true);
+  } catch (error) {
+    if (!clinic) $("name").textContent = "No encuentro esta clínica";
+    showError(error.message);
+  }
+}
+
+function changeStage(stage, reason) {
+  if (stage === clinic.stage) return Promise.resolve();
+  return act(() => send("POST", "/api/crm/clinics/" + clinicId + "/stage", { stage, reason }), load,
+    clinic.name + " pasa a «" + STAGES[stage] + "».");
+}
+
+// Leaving the path asks why (or until when) before saving. The reason is optional.
+function askReason(stage) {
+  pendingStage = stage;
+  $("reason").placeholder = stage === "later" ? "Por qué o hasta cuándo (opcional)" : "Motivo (opcional): precio, ya tiene agencia…";
+  $("reason").value = "";
+  $("reason-save").textContent = "Pasar a «" + STAGES[stage] + "»";
+  $("reason-form").hidden = false;
+  $("reason").focus();
+}
+
+$("to-later").addEventListener("click", () => askReason("later"));
+$("to-no").addEventListener("click", () => askReason("not_interested"));
+$("reason-cancel").addEventListener("click", () => { $("reason-form").hidden = true; });
+$("reason-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("reason-form").hidden = true;
+  await changeStage(pendingStage, $("reason").value);
+  if (pendingStage === "later") flash("Ponle un día en «Próximo paso» para volver a escribirle.");
+});
+
+$("stop-button").addEventListener("click", () => act(
+  () => send("PATCH", "/api/crm/clinics/" + clinicId, { do_not_contact: !clinic.do_not_contact }), load,
+  clinic.do_not_contact ? "Vuelve a salir en tus listas." : "Marcada como «No contactar»."));
+
+$("step-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const step = { next_step: $("step-text").value, next_step_on: $("step-day").value || null };
+  act(async () => {
+    await send("POST", "/api/crm/clinics/" + clinicId + "/next-step", step);
+    document.activeElement.blur();  // so the saved step is drawn back into the form
+  }, load, step.next_step_on ? "Paso guardado." : "Sin próximo paso.");
+});
+
+$("step-clear").addEventListener("click", () => act(
+  () => send("POST", "/api/crm/clinics/" + clinicId + "/next-step", { next_step: "", next_step_on: null }), load,
+  "Sin próximo paso."));
+
+$("note-contact").addEventListener("click", () => { showError(""); openContact(clinicId, load); });
+
+// ---- People ----
+
+function editPerson(person) {
+  editing = person;
+  Object.entries(PERSON).forEach(([id, key]) => { $(id).value = person ? person[key] : ""; });
+  $("p-decides").checked = Boolean(person && person.decides);
+  $("person-summary").textContent = person ? "Cambiando a " + person.name : "Añadir persona";
+  $("person-save").textContent = person ? "Guardar cambios" : "Guardar persona";
+  $("person-cancel").hidden = !person;
+  $("person-details").open = Boolean(person);
+  if (person) $("p-name").focus();
+}
+
+$("person-cancel").addEventListener("click", () => editPerson(null));
+$("person-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(Object.entries(PERSON).map(([id, key]) => [key, $(id).value]));
+  data.decides = $("p-decides").checked;
+  act(async () => {
+    if (editing) await send("PATCH", "/api/crm/people/" + editing.id, data);
+    else await send("POST", "/api/crm/clinics/" + clinicId + "/people", data);
+    flash(editing ? "Cambios guardados." : data.name.trim() + " ya está en la clínica.");
+    editPerson(null);
+  }, load);
+});
+
+// ---- The card ----
+
+$("card-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = Object.fromEntries(Object.entries(CARD).map(([id, key]) => [key, $(id).value]));
+  const number = (id) => $(id).value === "" ? null : Number($(id).value);
+  data.google_rating = number("k-rating");
+  data.google_reviews = number("k-reviews");
+  data.fit = number("k-fit");
+  showError("");
+  try {
+    await send("PATCH", "/api/crm/clinics/" + clinicId, data);
+    $("card-saved").hidden = false;
+    setTimeout(() => { $("card-saved").hidden = true; }, 3000);
+    await load(true);  // the card is drawn again: links come back complete
+  } catch (error) { showError(error.message); }
+});
+
+askTwice($("delete"), "Sí, borrar para siempre", async () => {
+  showError("");
+  try {
+    await send("DELETE", "/api/crm/clinics/" + clinicId);
+    location.href = "/crm#clinicas";
+  } catch (error) { showError(error.message); }
+});
+
+$("p-prefers").append(option("", "No lo sé"), ...Object.keys(CHANNELS).map((channel) => option(channel, CHANNELS[channel])));
+load(true);
+</script>
+</body>
+</html>

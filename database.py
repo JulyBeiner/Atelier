@@ -92,6 +92,68 @@ CREATE TABLE IF NOT EXISTS api_usage (
     cost_usd REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- The CRM. A clinic I would like as a client: where it is, how to reach it and where we are.
+-- stage is its step on the path (the list is in crm.py). next_step and next_step_on say what I do
+-- next and on which day. source_url is the page a clinic was imported from, so it never comes in twice.
+CREATE TABLE IF NOT EXISTS clinics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    city TEXT NOT NULL DEFAULT '',
+    area TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    website TEXT NOT NULL DEFAULT '',
+    instagram TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    batch TEXT NOT NULL DEFAULT '',
+    origin TEXT NOT NULL DEFAULT '',
+    treatments TEXT NOT NULL DEFAULT '',
+    google_rating REAL,
+    google_reviews INTEGER,
+    fit INTEGER,
+    notes TEXT NOT NULL DEFAULT '',
+    stage TEXT NOT NULL DEFAULT 'to_contact',
+    lost_reason TEXT NOT NULL DEFAULT '',
+    do_not_contact INTEGER NOT NULL DEFAULT 0,
+    next_step TEXT NOT NULL DEFAULT '',
+    next_step_on TEXT,
+    source_url TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The people I talk to in a clinic. prefers is the channel they like best; decides marks who can say yes.
+CREATE TABLE IF NOT EXISTS clinic_people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinic_id INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    instagram TEXT NOT NULL DEFAULT '',
+    prefers TEXT NOT NULL DEFAULT '',
+    decides INTEGER NOT NULL DEFAULT 0,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Every contact with a clinic: the day, what it was (kind), where (channel) and what happened.
+-- kind 'stage' is a change of stage I made by hand. stage_to is filled when the entry moved the clinic.
+CREATE TABLE IF NOT EXISTS clinic_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinic_id INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    person_id INTEGER REFERENCES clinic_people(id) ON DELETE SET NULL,
+    happened_on TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    channel TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    stage_to TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS clinic_history_by_clinic ON clinic_history(clinic_id);
+CREATE INDEX IF NOT EXISTS clinic_people_by_clinic ON clinic_people(clinic_id);
 """
 
 
@@ -104,7 +166,10 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create the tables and, on first run only, add invented demo data."""
+    """Create the tables and, on first run only, add invented demo data.
+
+    The CRM starts empty: its clinics are real, so they never come from this file.
+    """
     with get_connection() as connection:
         connection.executescript(SCHEMA)
         has_clients = connection.execute("SELECT 1 FROM clients LIMIT 1").fetchone()
