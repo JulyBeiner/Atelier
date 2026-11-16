@@ -17,6 +17,9 @@ const CHANNELS = {
   phone: "Teléfono", linkedin: "LinkedIn", in_person: "En persona",
 };
 const CLINIC_KINDS = { independent: "Independiente", chain: "Cadena o grande" };
+const NETWORKS = {
+  instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", threads: "Threads", linkedin: "LinkedIn",
+};
 // After each kind of contact: what usually comes next, and in how many days. It comes from my method:
 // the written proposal goes out within a day of the diagnosis call. No days means "I pick the day".
 const NEXT = {
@@ -178,8 +181,34 @@ function reachLinks(who) {
   }
   if (who.email) box.append(link("Correo", "mailto:" + encodeURIComponent(who.email).replace("%40", "@")));
   if (isWeb(who.website)) box.append(link("Web", who.website));
-  if (isWeb(who.instagram)) box.append(link("Instagram", who.instagram));
+  Object.keys(NETWORKS).forEach((network) => {
+    if (isWeb(who[network])) box.append(link(NETWORKS[network], who[network]));
+  });
   return box;
+}
+
+// What reading a clinic's website found out, in plain words.
+function webCheckSays(clinic) {
+  switch (clinic.website_check) {
+    case "phone": return "Web comprobada: su teléfono sale en ella.";
+    case "address": return "Web comprobada: su dirección sale en ella.";
+    case "unconfirmed": return "Web sin comprobar: no vi en ella su teléfono ni su calle. Mira que sea la suya.";
+    case "blocked": return "Su web pide a los programas que no entren: no la he leído.";
+    case "failed": return "No pude abrir su web. " + ((clinic.web_scan || {}).error || "");
+    case "not_found": return "No encontré su web probando con su nombre. Búscala en «Google Maps» y pégala en la ficha.";
+    default: return isWeb(clinic.website) ? "Su web está apuntada, pero todavía no la he leído." : "Todavía no tiene web apuntada.";
+  }
+}
+
+// Ask the server to read (or look for) one clinic's website. It can take half a minute.
+function readWeb(clinicId) {
+  return send("POST", "/api/crm/clinics/" + clinicId + "/read-web");
+}
+
+// "web, Instagram y TikTok": the fields a reading filled in.
+function filledSays(filled) {
+  const names = filled.map((field) => field === "website" ? "web" : NETWORKS[field] || field);
+  return names.length > 1 ? names.slice(0, -1).join(", ") + " y " + names[names.length - 1] : names[0] || "";
 }
 
 function stagePill(clinic) {

@@ -34,6 +34,7 @@ The candidates wait in the panel. I mark the ones that inspire me and what I lik
 - a history of every contact. Noting a contact moves the clinic along the path by itself: to contact, contacted, replied, call booked, call done, proposal sent, client
 - always a next step with a day. After a diagnosis call the written proposal is set for the next day, as in my method
 - "do not contact", and a button that erases a clinic with its people and its history when someone asks me to
+- it reads a clinic's own website, for free: it checks that the website is really theirs (its phone or its street must be on it) and collects its social profiles. When I do not know the website, it tries the addresses the clinic's name suggests and keeps one only if it passes that check
 
 Atelier never sends a message. The links only open WhatsApp, the phone or the mail on my computer, and I write.
 
@@ -73,6 +74,7 @@ The clinics and the people of the CRM are real, so they live only in the local d
 - `main.py` — the API and the pages of the panel
 - `database.py` — SQLite storage: clients, tasks, reports, API spending and the CRM
 - `crm.py` — the CRM: clinics, people, the history of contacts, next steps and what to do today
+- `clinic_web.py` — finds and reads a clinic's own website: checks that it is theirs and collects its social profiles
 - `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
 - `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts

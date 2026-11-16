@@ -31,6 +31,11 @@
     <p class="whose" id="whose">Clínica</p>
     <h1 id="name">Cargando…</h1>
     <div class="reach-line" id="reach"></div>
+    <div class="web-line" id="web-line" hidden>
+      <span id="web-says"></span>
+      <button type="button" class="quiet small" id="read-web">Leer su web</button>
+    </div>
+    <div class="web-line" id="web-unsure" hidden></div>
   </header>
 
   <div id="error" role="alert"></div>
@@ -127,6 +132,15 @@
               <div><label for="k-website">Web</label><input id="k-website" maxlength="300" placeholder="clinica.es"></div>
               <div><label for="k-instagram">Instagram</label><input id="k-instagram" maxlength="300" placeholder="@clinica"></div>
             </div>
+            <div class="row">
+              <div><label for="k-tiktok">TikTok</label><input id="k-tiktok" maxlength="300" placeholder="@clinica"></div>
+              <div><label for="k-facebook">Facebook</label><input id="k-facebook" maxlength="300" placeholder="clinica"></div>
+            </div>
+            <div class="row">
+              <div><label for="k-x">X</label><input id="k-x" maxlength="300" placeholder="@clinica"></div>
+              <div><label for="k-threads">Threads</label><input id="k-threads" maxlength="300" placeholder="@clinica"></div>
+            </div>
+            <div><label for="k-linkedin">LinkedIn</label><input id="k-linkedin" maxlength="300" placeholder="clinica, o el enlace entero"></div>
             <div><label for="k-treatments">Tratamientos estrella</label><input id="k-treatments" maxlength="1000" placeholder="Bótox, labios, láser…"></div>
             <div class="row">
               <div><label for="k-rating">Nota en Google (de 0 a 5)</label><input id="k-rating" type="number" min="0" max="5" step="0.1"></div>
@@ -187,7 +201,8 @@ let pendingStage = "";  // the way off the path I clicked, while the reason is b
 // The fields of the card: the id on the page and its name in the API.
 const CARD = {
   "k-name": "name", "k-area": "area", "k-city": "city", "k-address": "address", "k-phone": "phone",
-  "k-email": "email", "k-website": "website", "k-instagram": "instagram", "k-treatments": "treatments",
+  "k-email": "email", "k-website": "website", "k-instagram": "instagram", "k-tiktok": "tiktok",
+  "k-facebook": "facebook", "k-x": "x", "k-threads": "threads", "k-linkedin": "linkedin", "k-treatments": "treatments",
   "k-kind": "kind", "k-origin": "origin", "k-batch": "batch", "k-notes": "notes",
 };
 const PERSON = {
@@ -212,6 +227,17 @@ function renderHeader() {
   // Google Maps is where the reviews are: handy for filling in the card.
   const where = [clinic.name, clinic.address, clinic.city].filter(Boolean).join(", ");
   reach.lastChild.append(link("Google Maps", "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(where)));
+
+  $("web-line").hidden = false;
+  $("web-says").textContent = webCheckSays(clinic);
+  // Profiles their website links to that do not carry the clinic's name: shown, never written down for me.
+  const unsure = ((clinic.web_scan || {}).unsure || []).filter(isWeb);
+  $("web-unsure").hidden = unsure.length === 0;
+  $("web-unsure").replaceChildren("Su web enlaza también a perfiles que no llevan su nombre, y no los he apuntado:",
+    ...unsure.map((address) => link(address.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""), address)));
+  if (!$("read-web").disabled) {
+    $("read-web").textContent = !isWeb(clinic.website) ? "Buscar su web" : clinic.website_check ? "Leerla otra vez" : "Leer su web";
+  }
 }
 
 function renderPath() {
@@ -382,6 +408,19 @@ $("step-clear").addEventListener("click", () => act(
   "Sin próximo paso."));
 
 $("note-contact").addEventListener("click", () => { showError(""); openContact(clinicId, load); });
+
+// Read the clinic's website (or look for it): it checks that it is theirs and fills in the empty networks.
+$("read-web").addEventListener("click", async () => {
+  showError("");
+  $("read-web").disabled = true;
+  $("read-web").textContent = isWeb(clinic.website) ? "Leyendo su web…" : "Buscando su web…";
+  try {
+    const read = await readWeb(clinicId);
+    flash(read.filled.length ? "He apuntado: " + filledSays(read.filled) + "." : "No he encontrado nada nuevo que apuntar.");
+  } catch (error) { showError(error.message); }
+  $("read-web").disabled = false;
+  await load(true);  // the card is drawn again, with what was filled in
+});
 
 // ---- People ----
 

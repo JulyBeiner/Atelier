@@ -13,6 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+import clinic_web
 from database import get_connection
 
 router = APIRouter(prefix="/api/crm")
@@ -44,6 +45,15 @@ MOVES_TO = {
 OUTREACH = ("message_sent", "audit_sent")
 
 NUMBER_FIELDS = ("google_rating", "google_reviews", "fit")
+# The social networks a clinic has a field for, and the start of a profile's address on each.
+NETWORKS = {
+    "instagram": "https://www.instagram.com/{}/",
+    "tiktok": "https://www.tiktok.com/@{}",
+    "x": "https://x.com/{}",
+    "threads": "https://www.threads.net/@{}",
+    "facebook": "https://www.facebook.com/{}",
+    "linkedin": "https://www.linkedin.com/company/{}",
+}
 
 # A clinic with the day of the last real contact (notes and changes of stage are not contacts).
 CLINIC_QUERY = """
@@ -64,6 +74,11 @@ class ClinicUpdate(BaseModel):
     email: str | None = Field(default=None, max_length=200)
     website: str | None = Field(default=None, max_length=300)
     instagram: str | None = Field(default=None, max_length=300)
+    tiktok: str | None = Field(default=None, max_length=300)
+    x: str | None = Field(default=None, max_length=300)
+    threads: str | None = Field(default=None, max_length=300)
+    facebook: str | None = Field(default=None, max_length=300)
+    linkedin: str | None = Field(default=None, max_length=300)
     kind: ClinicKind | None = None
     batch: str | None = Field(default=None, max_length=40)
     origin: str | None = Field(default=None, max_length=200)
@@ -129,11 +144,11 @@ def full_link(value: str) -> str:
     return value
 
 
-def instagram_link(value: str) -> str:
-    """Instagram as a full link, whether I typed @name, name or the link itself."""
+def profile_link(network: str, value: str) -> str:
+    """A social profile as a full link, whether I typed @name, name or the link itself."""
     if not value or re.match(r"https?://", value, re.IGNORECASE):
         return value
-    return "https://www.instagram.com/" + value.lstrip("@").strip("/") + "/"
+    return NETWORKS[network].format(value.lstrip("@").strip("/"))
 
 
 def clean(fields: dict) -> dict:
@@ -148,8 +163,9 @@ def clean(fields: dict) -> dict:
             values[key] = (value or "").strip()
     if "website" in values:
         values["website"] = full_link(values["website"])
-    if "instagram" in values:
-        values["instagram"] = instagram_link(values["instagram"])
+    for network in NETWORKS:
+        if network in values:
+            values[network] = profile_link(network, values[network])
     if "name" in values and not values["name"]:
         raise HTTPException(status_code=422, detail="Falta el nombre.")
     return values
@@ -173,6 +189,7 @@ def update(connection, table: str, row_id: int, values: dict) -> None:
 def as_clinic(row) -> dict:
     clinic = dict(row)
     clinic["do_not_contact"] = bool(clinic["do_not_contact"])
+    clinic["web_scan"] = json.loads(clinic["web_scan"])
     return clinic
 
 
@@ -269,7 +286,10 @@ def get_clinic(clinic_id: int):
 def update_clinic(clinic_id: int, changes: ClinicUpdate):
     values = clean(changes.model_dump(exclude_unset=True))
     with get_connection() as connection:
-        fetch_clinic(connection, clinic_id)
+        before = fetch_clinic(connection, clinic_id)
+        if "website" in values and values["website"] != before["website"]:
+            # A different website has not been read yet: what was known about the old one no longer counts.
+            values |= {"website_check": "", "web_scan": "{}"}
         update(connection, "clinics", clinic_id, values)
         if values.get("do_not_contact"):
             # No follow-ups for a clinic that asked me not to write.
@@ -316,6 +336,28 @@ def change_next_step(clinic_id: int, step: NextStep):
         fetch_clinic(connection, clinic_id)
         set_next_step(connection, clinic_id, step.next_step, step.next_step_on)
         return fetch_clinic(connection, clinic_id)
+
+
+@router.post("/clinics/{clinic_id}/read-web")
+def read_web(clinic_id: int):
+    """Open the clinic's website, check that it is theirs and collect its social profiles. Free: no API.
+
+    With no website in the CRM, it tries the addresses the clinic's name suggests and keeps one only when
+    the page shows the clinic's phone or its street. What I typed myself is never replaced: only empty
+    fields are filled. "filled" lists what was added this time.
+    """
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    found = clinic_web.look(clinic)  # the slow part, with the database closed
+
+    values = {"website_check": found["check"], "web_scan": json.dumps(found["scan"], ensure_ascii=False)}
+    additions = {"website": found["website"]} | found["profiles"]
+    filled = [field for field, value in additions.items() if value and not clinic[field]]
+    values |= {field: additions[field] for field in filled}
+    with get_connection() as connection:
+        update(connection, "clinics", clinic_id, values)
+        touch(connection, clinic_id)
+        return fetch_clinic(connection, clinic_id) | {"filled": filled}
 
 
 # ---- History ----

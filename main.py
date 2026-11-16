@@ -38,6 +38,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(crm.router)
 
 
+@app.middleware("http")
+async def always_fresh(request, call_next):
+    """Tell the browser to ask again for every file. A page never mixes old and new code after a change."""
+    response = await call_next(request)
+    response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
 class ClientCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     website: str = Field(default="", max_length=300)

@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS api_usage (
 -- The CRM. A clinic I would like as a client: where it is, how to reach it and where we are.
 -- stage is its step on the path (the list is in crm.py). next_step and next_step_on say what I do
 -- next and on which day. source_url is the page a clinic was imported from, so it never comes in twice.
+-- More columns of this table are in NEW_COLUMNS, below: the ones added after the table already existed.
 CREATE TABLE IF NOT EXISTS clinics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -157,6 +158,30 @@ CREATE INDEX IF NOT EXISTS clinic_people_by_clinic ON clinic_people(clinic_id);
 """
 
 
+# Columns added to a table that already existed on my computer. CREATE TABLE IF NOT EXISTS leaves an
+# existing table as it is, so each of these is added once with ALTER TABLE.
+# website_check says how I know a clinic's website is really theirs; web_scan keeps what was read on it (JSON).
+NEW_COLUMNS = {
+    "clinics": {
+        "tiktok": "TEXT NOT NULL DEFAULT ''",
+        "x": "TEXT NOT NULL DEFAULT ''",
+        "threads": "TEXT NOT NULL DEFAULT ''",
+        "facebook": "TEXT NOT NULL DEFAULT ''",
+        "linkedin": "TEXT NOT NULL DEFAULT ''",
+        "website_check": "TEXT NOT NULL DEFAULT ''",
+        "web_scan": "TEXT NOT NULL DEFAULT '{}'",
+    },
+}
+
+
+def add_new_columns(connection: sqlite3.Connection) -> None:
+    for table, columns in NEW_COLUMNS.items():
+        existing = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+
+
 def get_connection() -> sqlite3.Connection:
     # The agent sometimes writes from several threads at once: wait for a turn instead of failing.
     connection = sqlite3.connect(DB_PATH, timeout=30)
@@ -172,6 +197,7 @@ def init_db() -> None:
     """
     with get_connection() as connection:
         connection.executescript(SCHEMA)
+        add_new_columns(connection)
         has_clients = connection.execute("SELECT 1 FROM clients LIMIT 1").fetchone()
         if has_clients:
             return

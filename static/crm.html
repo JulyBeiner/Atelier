@@ -96,6 +96,7 @@
       <div class="count-line" id="count-line">
         <span id="count" aria-live="polite"></span>
         <label class="check"><input type="checkbox" id="f-missing">Solo las que no tienen web ni Instagram</label>
+        <button type="button" class="quiet small" id="read-all" hidden></button>
       </div>
 
       <div class="table-wrap">
@@ -377,6 +378,44 @@ function renderList() {
   document.querySelector(".table-wrap").hidden = shown.length === 0;
 }
 
+// Read the websites nobody has read yet, three at a time. For a clinic with no website it looks for one.
+// Free: it only opens each clinic's own website.
+const unread = () => clinics.filter((clinic) => !clinic.website_check && !clinic.do_not_contact);
+let readingAll = false;
+
+function showReadAll() {
+  if (readingAll) return;
+  $("read-all").hidden = unread().length === 0;
+  $("read-all").textContent = "Buscar y leer las webs que faltan (" + unread().length + ")";
+}
+
+$("read-all").addEventListener("click", async () => {
+  const waiting = unread();
+  const total = waiting.length;
+  let done = 0, found = 0, failed = 0;
+  showError("");
+  readingAll = true;
+  $("read-all").disabled = true;
+  const say = () => { $("read-all").textContent = "Leyendo webs: " + done + " de " + total + "…"; };
+  const worker = async () => {
+    while (waiting.length) {
+      const clinic = waiting.shift();
+      try {
+        const read = await readWeb(clinic.id);
+        if (["phone", "address"].includes(read.website_check)) found += 1;
+      } catch (error) { failed += 1; }
+      done += 1;
+      say();
+    }
+  };
+  say();
+  await Promise.all([worker(), worker(), worker()]);
+  readingAll = false;
+  $("read-all").disabled = false;
+  flash("Webs comprobadas: " + found + " de " + total + "." + (failed ? " " + failed + " dieron error." : ""));
+  await refresh();
+});
+
 // Clinics waiting in the private folder: offer to bring them in.
 async function checkImport() {
   try {
@@ -430,6 +469,7 @@ async function refresh() {
     fillFilters();
     restoreFilters();
     renderList();
+    showReadAll();
   } catch (error) { showError("No se pudo cargar el CRM: " + error.message); }
   checkImport();
 }

@@ -195,6 +195,7 @@ table.clinics { width: 100%; border-collapse: collapse; }
 /* The card of one clinic */
 .reach-line { display: flex; gap: 6px 20px; flex-wrap: wrap; margin-top: 18px; font-size: 15px; }
 .reach-line span { color: var(--muted); }
+.web-line { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: center; margin-top: 14px; font-size: 14px; color: var(--muted); }
 /* The path: seven steps in order, so it is drawn as a line with stops. The current stop is the full one. */
 .track { list-style: none; display: flex; margin: 0; padding: 4px 0 4px 4px; overflow-x: auto; }
 .track li { flex: 1 1 0; min-width: 112px; position: relative; }
