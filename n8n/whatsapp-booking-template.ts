@@ -39,7 +39,7 @@ const ficha = node({
           { id: 'f-antelacion', name: 'antelacion_horas', value: '2', type: 'string' },
           { id: 'f-calendario', name: 'calendario', value: 'ID_DEL_CALENDARIO_DE_LA_CLINICA', type: 'string' },
           { id: 'f-numero', name: 'phone_number_id', value: 'ID_DEL_NUMERO_DE_WHATSAPP', type: 'string' },
-          { id: 'f-origen', name: 'origen', value: expr('{{ $json.messages?.[0]?.text?.body ? "mensaje" : (($json.messages || $json.statuses) ? "otro" : "horario") }}'), type: 'string' },
+          { id: 'f-origen', name: 'origen', value: expr('{{ $json.messages?.[0]?.text?.body ? "mensaje" : (["audio", "image", "video", "document"].includes($json.messages?.[0]?.type) ? "sin_texto" : (($json.messages || $json.statuses) ? "otro" : "horario")) }}'), type: 'string' },
           { id: 'f-mensaje', name: 'mensaje', value: expr('{{ $json.messages?.[0]?.text?.body ?? "" }}'), type: 'string' },
           { id: 'f-telefono', name: 'paciente_telefono', value: expr('{{ $json.messages?.[0]?.from ?? "" }}'), type: 'string' },
           { id: 'f-nombre', name: 'paciente_nombre', value: expr('{{ $json.contacts?.[0]?.profile?.name ?? "" }}'), type: 'string' }
@@ -58,7 +58,8 @@ const porOrigen = switchCase({
       rules: {
         values: [
           { outputKey: 'mensaje', conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' }, conditions: [{ leftValue: expr('{{ $json.origen }}'), operator: { type: 'string', operation: 'equals' }, rightValue: 'mensaje' }], combinator: 'and' } },
-          { outputKey: 'horario', conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' }, conditions: [{ leftValue: expr('{{ $json.origen }}'), operator: { type: 'string', operation: 'equals' }, rightValue: 'horario' }], combinator: 'and' } }
+          { outputKey: 'horario', conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' }, conditions: [{ leftValue: expr('{{ $json.origen }}'), operator: { type: 'string', operation: 'equals' }, rightValue: 'horario' }], combinator: 'and' } },
+          { outputKey: 'sin texto', conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' }, conditions: [{ leftValue: expr('{{ $json.origen }}'), operator: { type: 'string', operation: 'equals' }, rightValue: 'sin_texto' }], combinator: 'and' } }
         ]
       }
     }
@@ -169,23 +170,41 @@ const memoriaPaciente = memory({
 });
 
 const reservar = tool({
-  type: 'n8n-nodes-base.googleCalendarTool',
-  version: 1.4,
+  type: '@n8n/n8n-nodes-langchain.toolWorkflow',
+  version: 2.2,
   config: {
     name: 'reservar',
     parameters: {
-      resource: 'event',
-      operation: 'create',
-      calendar: { __rl: true, mode: 'id', value: expr("{{ $('Ficha de la clínica').item.json.calendario }}") },
-      start: fromAi('inicio', 'Inicio de la cita: uno de los huecos libres, en formato ISO con el desfase de ese día, por ejemplo 2026-11-19T17:00:00+01:00'),
-      end: fromAi('fin', 'Fin de la cita: el inicio más los minutos del tratamiento, en el mismo formato ISO'),
-      useDefaultReminders: true,
-      additionalFields: {
-        summary: fromAi('titulo', 'Tratamiento y nombre de la paciente, por ejemplo: ácido hialurónico · Marta'),
-        description: expr("Reservada por WhatsApp por el asistente. Tel: {{ $('Ficha de la clínica').item.json.paciente_telefono }}")
+      description: 'Reserva una cita en la agenda de la clínica. Antes de escribirla vuelve a mirar la agenda. Contesta RESERVADA, o NO RESERVADA con el motivo.',
+      source: 'database',
+      workflowId: { __rl: true, mode: 'id', value: expr('{{ $workflow.id }}') },
+      workflowInputs: {
+        mappingMode: 'defineBelow',
+        value: {
+          inicio: fromAi('inicio', 'Inicio de la cita: uno de los huecos libres, en formato ISO con el desfase de ese día, por ejemplo 2026-11-19T17:00:00+01:00'),
+          tratamiento: fromAi('tratamiento', 'El tratamiento, con el nombre exacto de la lista de tratamientos'),
+          nombre: fromAi('nombre', 'El nombre de la paciente'),
+          telefono: expr("{{ $('Ficha de la clínica').item.json.paciente_telefono }}"),
+          calendario: expr("{{ $('Ficha de la clínica').item.json.calendario }}"),
+          tratamientos_json: expr("{{ $('Ficha de la clínica').item.json.tratamientos_json }}"),
+          horario_json: expr("{{ $('Ficha de la clínica').item.json.horario_json }}"),
+          antelacion_horas: expr("{{ $('Ficha de la clínica').item.json.antelacion_horas }}")
+        },
+        matchingColumns: [],
+        schema: [
+          { id: 'inicio', displayName: 'inicio', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'tratamiento', displayName: 'tratamiento', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'nombre', displayName: 'nombre', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'telefono', displayName: 'telefono', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'calendario', displayName: 'calendario', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'tratamientos_json', displayName: 'tratamientos_json', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'horario_json', displayName: 'horario_json', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false },
+          { id: 'antelacion_horas', displayName: 'antelacion_horas', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string', removed: false }
+        ],
+        attemptToConvertTypes: false,
+        convertFieldsToString: false
       }
-    },
-    credentials: { googleCalendarOAuth2Api: newCredential('Agenda de la clínica') }
+    }
   }
 });
 
@@ -244,7 +263,8 @@ const asistente = node({
           '- Los huecos salen solo de la lista HUECOS LIBRES de abajo. Nunca inventes un día ni una hora.\n' +
           '- Cada hueco lleva entre paréntesis los minutos que quedan libres desde esa hora. Un tratamiento solo cabe si dura eso o menos.\n' +
           '- Ofrece tres huecos como mucho: dos del primer día que tenga sitio, separados, y uno de otro día. Si la paciente pide un día o una parte del día, busca ahí.\n' +
-          '- Cuando elija un hueco de la lista, usa la herramienta reservar. Confirma la cita solo si reservar ha ido bien. Dile el día y la hora, y que el día antes recibirá un recordatorio.\n' +
+          '- Cuando elija un hueco de la lista, usa la herramienta reservar con el inicio, el tratamiento y su nombre. Si no sabes su nombre, pregúntaselo antes. reservar vuelve a mirar la agenda: confirma la cita solo si contesta RESERVADA. Dile el día y la hora, y que el día antes recibirá un recordatorio.\n' +
+          '- Si reservar contesta NO RESERVADA, no hay cita: discúlpate y ofrece otros huecos de la lista.\n' +
           '- Para cambiar o cancelar, usa primero buscar_cita, que solo encuentra las citas de quien escribe. Para cancelar, usa cancelar_cita con el id que devuelve. Para cambiar, cancela la antigua después de reservar la nueva.\n' +
           '- No des precios, ni consejo médico, ni opiniones sobre un tratamiento. Di que se lo confirma el equipo de la clínica en cuanto abra.\n' +
           '- Si no entiendes algo o la paciente está molesta, dile que el equipo le escribirá en cuanto abra.\n' +
@@ -342,6 +362,234 @@ const recordatorio = node({
   output: [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.001', message_status: 'accepted' }] }]
 });
 
+const soloTexto = node({
+  type: 'n8n-nodes-base.whatsApp',
+  version: 1.1,
+  config: {
+    name: 'Contestar que solo lee texto',
+    parameters: {
+      resource: 'message',
+      operation: 'send',
+      phoneNumberId: expr('{{ $json.phone_number_id }}'),
+      recipientPhoneNumber: expr('{{ $json.paciente_telefono }}'),
+      messageType: 'text',
+      textBody: expr('Soy el asistente de {{ $json.clinica }} y de momento solo puedo leer mensajes de texto. ¿Me lo escribes, por favor?')
+    },
+    credentials: { whatsAppApi: newCredential('WhatsApp de la clínica') }
+  },
+  output: [{ messaging_product: 'whatsapp', messages: [{ id: 'wamid.002' }] }]
+});
+
+const pideReservar = trigger({
+  type: 'n8n-nodes-base.executeWorkflowTrigger',
+  version: 1.3,
+  config: {
+    name: 'El asistente pide reservar',
+    parameters: {
+      inputSource: 'workflowInputs',
+      workflowInputs: { values: [{ name: 'inicio', type: 'string' }, { name: 'tratamiento', type: 'string' }, { name: 'nombre', type: 'string' }, { name: 'telefono', type: 'string' }, { name: 'calendario', type: 'string' }, { name: 'tratamientos_json', type: 'string' }, { name: 'horario_json', type: 'string' }, { name: 'antelacion_horas', type: 'string' }] }
+    }
+  },
+  output: [{ inicio: '2026-11-19T17:00:00+01:00', tratamiento: 'ácido hialurónico', nombre: 'Marta', telefono: '34600000000', calendario: 'ID_DEL_CALENDARIO_DE_LA_CLINICA', tratamientos_json: '[{"name":"ácido hialurónico","minutes":45}]', horario_json: '{"thu":[["16:00","20:00"]]}', antelacion_horas: '2' }]
+});
+
+const prepararReserva = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Preparar la reserva',
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `// What the assistant asks for is checked with code, with the same rules as Atelier's rehearsal
+// (automations.py): the treatment is one of the clinic's, and the visit starts on a half-hour step
+// of the opening hours, fits inside them and respects the minimum notice. The model never decides this.
+const pedido = $input.first().json;
+const zona = 'Europe/Madrid';
+const claves = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const nombres = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+const no = (motivo) => [{ json: { valido: false, respuesta: 'NO RESERVADA: ' + motivo } }];
+let tratamientos;
+let horario;
+try {
+  tratamientos = JSON.parse(pedido.tratamientos_json);
+  horario = JSON.parse(pedido.horario_json);
+} catch (error) {
+  return no('no se puede leer la ficha de la clínica. Dile a la paciente que el equipo le escribirá en cuanto abra.');
+}
+const limpio = (texto) => String(texto || '').trim().toLowerCase();
+const tratamiento = tratamientos.find((uno) => limpio(uno.name) === limpio(pedido.tratamiento));
+if (!tratamiento) return no('ese tratamiento no está en la lista. Usa el nombre exacto de uno de la lista.');
+const inicio = DateTime.fromISO(String(pedido.inicio || ''), { zone: zona }).setZone(zona);
+if (!inicio.isValid) return no('el inicio no se entiende. Tiene que ser como 2026-11-19T17:00:00+01:00.');
+const fin = inicio.plus({ minutes: tratamiento.minutes });
+const primero = DateTime.now().plus({ hours: Number(pedido.antelacion_horas) || 0 });
+if (inicio.toMillis() < primero.toMillis()) return no('ese hueco ya ha pasado o está demasiado cerca. Ofrece otro de la lista.');
+let dentro = false;
+for (const tramo of horario[claves[inicio.weekday - 1]] || []) {
+  const abre = tramo[0].split(':').map(Number);
+  const cierra = tramo[1].split(':').map(Number);
+  const desde = inicio.startOf('day').set({ hour: abre[0], minute: abre[1] });
+  const hasta = inicio.startOf('day').set({ hour: cierra[0], minute: cierra[1] });
+  const minutos = (inicio.toMillis() - desde.toMillis()) / 60000;
+  if (minutos >= 0 && minutos % 30 === 0 && fin.toMillis() <= hasta.toMillis()) dentro = true;
+}
+if (!dentro) return no('a esa hora no cabe ese tratamiento en el horario de la clínica. Ofrece un hueco de la lista.');
+return [{ json: {
+  valido: true,
+  respuesta: '',
+  calendario: pedido.calendario,
+  inicio: inicio.toISO(),
+  fin: fin.toISO(),
+  titulo: tratamiento.name + ' · ' + (String(pedido.nombre || '').trim() || 'Paciente'),
+  telefono: String(pedido.telefono || ''),
+  cuando: nombres[inicio.weekday - 1] + ' ' + inicio.toFormat('yyyy-MM-dd') + ' a las ' + inicio.toFormat('HH:mm'),
+} }];`
+    }
+  },
+  output: [{ valido: true, respuesta: '', calendario: 'ID_DEL_CALENDARIO_DE_LA_CLINICA', inicio: '2026-11-19T17:00:00.000+01:00', fin: '2026-11-19T17:45:00.000+01:00', titulo: 'ácido hialurónico · Marta', telefono: '34600000000', cuando: 'jueves 2026-11-19 a las 17:00' }]
+});
+
+const peticionValida = ifElse({
+  version: 2.2,
+  config: {
+    name: '¿Se puede pedir ese hueco?',
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' },
+        conditions: [{ leftValue: expr('{{ $json.valido }}'), operator: { type: 'boolean', operation: 'true', singleValue: true }, rightValue: '' }],
+        combinator: 'and'
+      }
+    }
+  },
+  output: [{ valido: true }]
+});
+
+const leerEseRato = node({
+  type: 'n8n-nodes-base.googleCalendar',
+  version: 1.4,
+  config: {
+    name: 'Leer ese rato de la agenda',
+    alwaysOutputData: true,
+    parameters: {
+      resource: 'event',
+      operation: 'getAll',
+      calendar: { __rl: true, mode: 'id', value: expr('{{ $json.calendario }}') },
+      returnAll: true,
+      timeMin: expr('{{ $json.inicio }}'),
+      timeMax: expr('{{ $json.fin }}'),
+      options: { orderBy: 'startTime', recurringEventHandling: 'expand' }
+    },
+    credentials: { googleCalendarOAuth2Api: newCredential('Agenda de la clínica') }
+  },
+  output: [{}]
+});
+
+const sigueLibre = node({
+  type: 'n8n-nodes-base.code',
+  version: 2,
+  config: {
+    name: 'Mirar si sigue libre',
+    parameters: {
+      mode: 'runOnceForAllItems',
+      language: 'javaScript',
+      jsCode: `// The diary, read one moment before writing: the visit is booked only if it touches no other event.
+// This is what keeps the diary without double bookings when two patients want the same slot.
+const reserva = $('Preparar la reserva').first().json;
+const zona = 'Europe/Madrid';
+const desde = DateTime.fromISO(reserva.inicio).toMillis();
+const hasta = DateTime.fromISO(reserva.fin).toMillis();
+let libre = true;
+for (const item of $input.all()) {
+  const cita = item.json;
+  if (!cita || !cita.start || cita.status === 'cancelled') continue;
+  let empieza;
+  let acaba;
+  if (cita.start.dateTime) {
+    empieza = DateTime.fromISO(cita.start.dateTime).toMillis();
+    acaba = DateTime.fromISO(cita.end.dateTime).toMillis();
+  } else if (cita.start.date) {
+    empieza = DateTime.fromISO(cita.start.date, { zone: zona }).toMillis();
+    acaba = DateTime.fromISO(cita.end.date, { zone: zona }).toMillis();
+  } else {
+    continue;
+  }
+  if (empieza < hasta && acaba > desde) libre = false;
+}
+return [{ json: Object.assign({}, reserva, {
+  libre: libre,
+  respuesta: libre ? '' : 'NO RESERVADA: ese hueco se acaba de ocupar. Discúlpate y ofrece otros huecos de la lista, sin ese.',
+}) }];`
+    }
+  },
+  output: [{ valido: true, libre: true, respuesta: '', calendario: 'ID_DEL_CALENDARIO_DE_LA_CLINICA', inicio: '2026-11-19T17:00:00.000+01:00', fin: '2026-11-19T17:45:00.000+01:00', titulo: 'ácido hialurónico · Marta', telefono: '34600000000', cuando: 'jueves 2026-11-19 a las 17:00' }]
+});
+
+const huecoLibre = ifElse({
+  version: 2.2,
+  config: {
+    name: '¿Sigue libre el hueco?',
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' },
+        conditions: [{ leftValue: expr('{{ $json.libre }}'), operator: { type: 'boolean', operation: 'true', singleValue: true }, rightValue: '' }],
+        combinator: 'and'
+      }
+    }
+  },
+  output: [{ libre: true }]
+});
+
+const escribirCita = node({
+  type: 'n8n-nodes-base.googleCalendar',
+  version: 1.4,
+  config: {
+    name: 'Escribir la cita en la agenda',
+    parameters: {
+      resource: 'event',
+      operation: 'create',
+      calendar: { __rl: true, mode: 'id', value: expr('{{ $json.calendario }}') },
+      start: expr('{{ $json.inicio }}'),
+      end: expr('{{ $json.fin }}'),
+      useDefaultReminders: true,
+      additionalFields: {
+        summary: expr('{{ $json.titulo }}'),
+        description: expr('Reservada por WhatsApp por el asistente. Tel: {{ $json.telefono }}')
+      }
+    },
+    credentials: { googleCalendarOAuth2Api: newCredential('Agenda de la clínica') }
+  },
+  output: [{ id: 'abc124', summary: 'ácido hialurónico · Marta', status: 'confirmed' }]
+});
+
+const citaReservada = node({
+  type: 'n8n-nodes-base.set',
+  version: 3.4,
+  config: {
+    name: 'Decir que está reservada',
+    parameters: {
+      mode: 'manual',
+      includeOtherFields: false,
+      assignments: { assignments: [{ id: 'r-si', name: 'respuesta', value: expr("RESERVADA: {{ $('Mirar si sigue libre').first().json.titulo }}, el {{ $('Mirar si sigue libre').first().json.cuando }}."), type: 'string' }] }
+    }
+  },
+  output: [{ respuesta: 'RESERVADA: ácido hialurónico · Marta, el jueves 2026-11-19 a las 17:00.' }]
+});
+
+const citaNoReservada = node({
+  type: 'n8n-nodes-base.set',
+  version: 3.4,
+  config: {
+    name: 'Decir que no se ha reservado',
+    parameters: {
+      mode: 'manual',
+      includeOtherFields: false,
+      assignments: { assignments: [{ id: 'r-no', name: 'respuesta', value: expr('{{ $json.respuesta }}'), type: 'string' }] }
+    }
+  },
+  output: [{ respuesta: 'NO RESERVADA: ese hueco se acaba de ocupar. Discúlpate y ofrece otros huecos de la lista, sin ese.' }]
+});
+
 const nota = sticky(
   '## Plantilla de Atelier: un WhatsApp que contesta y reserva solo\n\n' +
   '**No publicar esta plantilla.** Para cada clínica se hace una copia y se rellena la «Ficha de la clínica» con lo que July aprobó en el panel de Atelier (Automatizaciones).\n\n' +
@@ -351,9 +599,9 @@ const nota = sticky(
   '3. En «Enviar el recordatorio»: la plantilla aprobada por Meta, con tres huecos: día, hora y clínica.\n' +
   '4. La zona horaria del flujo: Europe/Madrid.\n\n' +
   '**Lo que esta primera versión todavía no hace**\n' +
-  '- No vuelve a comprobar el hueco con código justo antes de reservar: el asistente elige de una lista recién leída de la agenda.\n' +
-  '- No avisa al equipo por otro canal cuando deja algo para una persona.\n' +
-  '- Solo entiende mensajes de texto.\n\n' +
+  '- No avisa al equipo por otro canal cuando deja algo para una persona: July lo decide al revisar el programa completo.\n' +
+  '- De audios, fotos y archivos solo contesta que no puede leerlos.\n\n' +
+  '**Cómo reserva:** la herramienta «reservar» llama a este mismo flujo («El asistente pide reservar»), que vuelve a leer la agenda y solo escribe la cita si el hueco sigue libre.\n\n' +
   '**Cuesta dinero al activarse:** mensajes de WhatsApp, el modelo y las ejecuciones de n8n. Nada se activa sin el sí de July.',
   [],
   { color: 4 }
@@ -364,9 +612,17 @@ export default workflow('atelier-plantilla-whatsapp-reserva', 'Atelier · Planti
   .to(ficha)
   .to(porOrigen
     .onCase(0, leerAgenda.to(huecosLibres.to(asistente.to(contestar))))
-    .onCase(1, citasDeManana.to(citasConTelefono.to(recordatorio))))
+    .onCase(1, citasDeManana.to(citasConTelefono.to(recordatorio)))
+    .onCase(2, soloTexto))
   .add(cadaManana)
   .to(ficha)
+  .add(pideReservar)
+  .to(prepararReserva)
+  .to(peticionValida
+    .onTrue(leerEseRato.to(sigueLibre.to(huecoLibre
+      .onTrue(escribirCita.to(citaReservada))
+      .onFalse(citaNoReservada))))
+    .onFalse(citaNoReservada))
   .add(nota)
   .group('Contestar y reservar', [leerAgenda, huecosLibres, asistente, modelo, memoriaPaciente, reservar, buscarCita, cancelarCita, contestar], {
     description: 'Lee la agenda, calcula los huecos libres, el asistente contesta y reserva, y la respuesta sale por WhatsApp.'
