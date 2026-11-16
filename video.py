@@ -6,9 +6,13 @@ would not open on a clinic's phone; a video needs nothing to open.
 
 Five scenes: the clinic and me → what I saw, with their own website on a phone and the fact with its
 number → the prototype → what it would include (never a price) → an invitation to a short call.
-The prototype depends on the biggest hole of the quick X-ray. For now there is one, for automations
-(no WhatsApp, no online booking...): a WhatsApp conversation that books an appointment by itself, with the
-clinic's name and one of its treatments. Marketing and web come next.
+The prototype depends on the biggest hole of the quick X-ray:
+- automations (no WhatsApp, no online booking...): a WhatsApp conversation that books an appointment by
+  itself, with the clinic's name and one of its treatments;
+- marketing: the message that asks a patient for her Google review (few or low reviews), the panel that
+  says where patients come from (nothing measures the visits), or a month of posts waiting for a yes (no
+  Instagram on the website). Every number in those is an example, and the video says so.
+Web comes next: its prototype is a new homepage made by the Web agent, which costs API.
 
 How it is made: plan() writes the words from the X-ray (instant). Then this file runs as its own process,
 like capture.py, so the browser never blocks the panel: it opens the clinic's homepage on a phone, fills
@@ -42,6 +46,7 @@ import clinic_web
 import outreach
 import site_reader
 from inspiration import robots_allow, tidy_url
+from xray import number
 
 BASE_DIR = Path(__file__).parent
 VIDEOS_DIR = BASE_DIR / "private" / "videos"  # git ignores private/
@@ -63,7 +68,28 @@ FADE_SECONDS = 1.5
 NO_FFMPEG = "Falta ffmpeg. Escribe en la terminal: pip install imageio-ffmpeg"
 
 # The angles that already have their prototype.
-READY_ANGLES = {"automation"}
+READY_ANGLES = {"automation", "marketing"}
+# The prototype each hole gets. Every other hole of a ready angle gets "booking".
+PROTOTYPES = {"low_rating": "review", "fair_rating": "review", "few_reviews": "review", "some_reviews": "review",
+              "no_tracking": "sources", "no_instagram": "posts"}
+# What the proposal would include, for the prototypes that do not depend on the clinic. Never a price.
+POINTS = {
+    "review": ["Un mensaje a cada paciente después de su cita, pidiendo la reseña.",
+               "Con el enlace directo a vuestra ficha de Google: dos toques.",
+               "Un aviso para vosotras cada vez que llega una reseña nueva."],
+    "sources": ["Medición de las visitas y de las citas de vuestra web.",
+                "Un resumen cada lunes: de dónde vino cada paciente.",
+                "Recomendaciones claras: dónde invertir y dónde no."],
+    "posts": ["Vuestro Instagram enlazado desde la web, a un toque.",
+              "Un mes de publicaciones preparado, con vuestro estilo.",
+              "Vosotras aprobáis: nada se publica sin vuestro sí."],
+}
+INTROS = {
+    "booking": "Lo que he visto en vuestra web y una idea para que no se os escape ninguna cita.",
+    "review": "Lo que he visto de vuestra clínica en Google y una idea para conseguir más reseñas.",
+    "sources": "Lo que he visto en vuestra web y una idea para saber qué os trae pacientes.",
+    "posts": "Lo que he visto en vuestra web y una idea para que vuestro Instagram trabaje más.",
+}
 
 # Treatments a patient could ask for on WhatsApp, in the words she would use, and how to spot them on a
 # website (lowercase and without accents). The one the website names most goes in the chat; on a tie, the
@@ -110,6 +136,7 @@ def has_whatsapp(signals: dict) -> bool:
 def what_i_saw(clinic: dict, key: str) -> tuple[str, str]:
     """The fact on the card of scene 2: one short line and the detail under it."""
     signals = (clinic.get("web_scan") or {}).get("signals") or {}
+    rating, reviews = clinic.get("google_rating"), clinic.get("google_reviews")
     if key == "no_quick_way":
         ways = ("llamar o rellenar un formulario" if signals.get("forms")
                 else "llamar o escribir un correo" if signals.get("mail_link") else "llamar")
@@ -120,6 +147,16 @@ def what_i_saw(clinic: dict, key: str) -> tuple[str, str]:
     if key == "phone_not_tappable":
         return ("En el móvil, vuestro teléfono no se puede pulsar para llamar.",
                 "Quien os encuentra desde el móvil tiene que copiarlo a mano.")
+    if key == "no_tracking":
+        return "Vuestra web no mide sus visitas.", "Así no hay forma de saber qué canal os trae pacientes."
+    if key == "no_instagram":
+        return ("Vuestra web no enlaza a ningún Instagram.",
+                "En una clínica estética, es donde más se ve vuestro trabajo.")
+    if key in ("low_rating", "fair_rating"):
+        return (f"En Google tenéis un {number(rating)} con {reviews} reseñas.",
+                "Es lo primero que mira una paciente antes de reservar.")
+    if key in ("few_reviews", "some_reviews"):
+        return f"En Google tenéis {reviews} reseñas.", "Con más reseñas recientes, más pacientes se deciden."
     return ("Vuestra web está muy cuidada.",
             "Donde suelen perderse citas es después: en lo que se tarda en contestar.")
 
@@ -154,6 +191,7 @@ def plan(clinic: dict) -> dict:
     """What the video of a clinic will say, or why it cannot be made yet. Instant: it opens nothing.
 
     ready is False when the X-ray is missing, unsure, or its hole has no prototype yet; why says what to do.
+    kind is the prototype: booking, review, sources or posts.
     """
     xray = clinic.get("xray")
     if not xray:
@@ -166,48 +204,86 @@ def plan(clinic: dict) -> dict:
     if angle not in READY_ANGLES:
         return {"ready": False, "angle": angle,
                 "why": f"Su agujero es de {outreach.ANGLES[angle]}, y ese vídeo llega en el siguiente paso de Atelier."
-                       " De momento solo está el de automatizaciones."}
+                       " De momento están los de automatizaciones y los de marketing."}
     url = tidy_url((clinic.get("xray_scan") or {}).get("url") or clinic.get("website") or "")
     if not url:
         return {"ready": False, "why": "Falta su web en la ficha."}
 
     signals = (clinic.get("web_scan") or {}).get("signals") or {}
+    kind = PROTOTYPES.get(key, "booking")
     headline, detail = what_i_saw(clinic, key)
     first = ("Vuestro WhatsApp, contestando y reservando solo, a cualquier hora." if has_whatsapp(signals)
              else "Un WhatsApp que contesta y reserva solo, a cualquier hora.")
+    booking = [first,
+               "Conectado a vuestra agenda: sin citas dobles ni huecos perdidos.",
+               "Un recordatorio el día antes, para que no se pierdan citas."]
     return {
-        "ready": True, "why": "", "angle": angle, "key": key,
+        "ready": True, "why": "", "angle": angle, "key": key, "kind": kind,
         "clinic_id": clinic["id"], "clinic": clinic["name"], "url": url, "xray_at": xray["at"],
-        "treatment": treatment_on_card(clinic.get("treatments") or ""),
+        # Only the booking chat names a treatment.
+        "treatment": treatment_on_card(clinic.get("treatments") or "") if kind == "booking" else "",
         "headline": headline, "detail": detail,
-        "points": [first,
-                   "Conectado a vuestra agenda: sin citas dobles ni huecos perdidos.",
-                   "Un recordatorio el día antes, para que no se pierdan citas."],
+        "points": POINTS.get(kind, booking),
+    }
+
+
+def prototype(job: dict, treatment: str) -> dict:
+    """The words of scene 3, the prototype. In "sources" and "posts" every number is an example."""
+    clinic = job["clinic"]
+    chat = {"kicker": "Así quedaría", "status": "en línea", "input": "Escribe un mensaje"}
+    if job["kind"] == "review":
+        return chat | {
+            "kind": "review", "sub": "Una paciente sale de su cita. Esa misma tarde recibe esto.", "clock": "18:40",
+            "thanks": f"¡Gracias por venir hoy a {clinic}!", "thanks_time": "18:40",
+            "ask": "¿Nos cuentas cómo ha ido? Tu opinión ayuda a otras pacientes a decidirse.", "ask_time": "18:40",
+            "button": "Dejar mi reseña", "published": "Reseña publicada en Google",
+            "bye": "¡Mil gracias! Nos ayuda muchísimo.", "bye_time": "18:43",
+            "caption": "Cada paciente recibe este mensaje al salir, sin que nadie del equipo tenga que acordarse.",
+        }
+    if job["kind"] == "sources":
+        return {
+            "kind": "sources", "kicker": "Así quedaría", "sub": "Cada lunes, en vuestro correo: de dónde vino cada cita.",
+            "clock": "9:02", "title": "De dónde vienen vuestras pacientes", "note": "Este mes · datos de ejemplo",
+            "rows": [["Google", 16], ["Instagram", 11], ["Recomendación", 7], ["Web directa", 4]],
+            "total": "38 citas este mes",
+            "caption": "Sabréis qué canal os trae pacientes y dónde merece la pena invertir.",
+        }
+    if job["kind"] == "posts":
+        return {
+            "kind": "posts", "kicker": "Así quedaría", "sub": "Un mes de publicaciones, esperando vuestro sí.",
+            "clock": "10:15", "count": "9 publicaciones preparadas",
+            "tiles": ["Conoce al equipo", "Preguntas frecuentes", "El favorito del mes", "Cuidados en casa",
+                      "Un día en la clínica", "Opiniones de pacientes", "Mitos y verdades", "La primera visita",
+                      "Pide tu cita"],
+            "ready": "Listas para aprobar",
+            "caption": "Vosotras solo aprobáis. Y vuestra web lleva directa a vuestro Instagram.",
+        }
+    asks_for = treatment or NO_TREATMENT
+    return chat | {
+        "kind": "booking", "sub": "Una paciente os escribe a las 23:14, con la clínica cerrada.", "clock": "23:14",
+        "ask": f"Hola, ¿tenéis hueco esta semana para {asks_for}?", "ask_time": "23:14",
+        "hello": f"¡Hola! Soy el asistente de {clinic}. Para {asks_for} tengo estos huecos:", "hello_time": "23:14",
+        "slots": ["Jue 10:30", "Jue 17:00", "Vie 12:00"], "pick": 1,
+        "picked": "El jueves a las 17:00, por favor", "picked_time": "23:15",
+        "done": "Hecho: te esperamos el jueves a las 17:00. El día antes te mandamos un recordatorio.",
+        "done_time": "23:15",
+        "caption": "La cita queda en vuestra agenda sin que nadie del equipo toque el móvil.",
     }
 
 
 def script(job: dict, treatment: str) -> dict:
     """Every word of the video, for static/video.html. treatment is "" when I do not know one."""
     clinic = job["clinic"]
-    asks_for = treatment or NO_TREATMENT
     return {
         "clinic": clinic, "initials": initials(clinic),
         "domain": (urlsplit(job["url"]).hostname or "").removeprefix("www."),
-        "intro": "Lo que he visto en vuestra web y una idea para que no se os escape ninguna cita.",
+        "intro": INTROS[job["kind"]],
         "byline": "Un vídeo de Jul Beiner",
-        "seen": {"kicker": "Lo que he visto", "sub": "En vuestra web, desde el móvil", "label": "Lo primero que cambiaría",
+        "seen": {"kicker": "Lo que he visto", "label": "Lo primero que cambiaría",
+                 "sub": "En Google, antes de reservar" if job["kind"] == "review"
+                        else "En vuestra web, desde el móvil",
                  "headline": job["headline"], "detail": job["detail"]},
-        "proto": {
-            "kicker": "Así quedaría", "sub": "Una paciente os escribe a las 23:14, con la clínica cerrada.",
-            "status": "en línea", "input": "Escribe un mensaje", "clock": "23:14",
-            "ask": f"Hola, ¿tenéis hueco esta semana para {asks_for}?", "ask_time": "23:14",
-            "hello": f"¡Hola! Soy el asistente de {clinic}. Para {asks_for} tengo estos huecos:", "hello_time": "23:14",
-            "slots": ["Jue 10:30", "Jue 17:00", "Vie 12:00"], "pick": 1,
-            "picked": "El jueves a las 17:00, por favor", "picked_time": "23:15",
-            "done": "Hecho: te esperamos el jueves a las 17:00. El día antes te mandamos un recordatorio.",
-            "done_time": "23:15",
-            "caption": "La cita queda en vuestra agenda sin que nadie del equipo toque el móvil.",
-        },
+        "proto": prototype(job, treatment),
         "includes": {"kicker": "La propuesta", "title": "Qué incluiría", "points": job["points"],
                      "foot": "Todo se adapta a cómo trabajáis hoy."},
         "call": {"title": "¿Lo vemos en una llamada corta?",
@@ -618,7 +694,8 @@ def main(job_path: str) -> int:
         try:
             tell(0.02, "Abriendo su web en un móvil…")
             shot, text = look(browser, job["url"])
-            treatment = job["treatment"] or treatment_in(text)
+            booking = job["kind"] == "booking"
+            treatment = (job["treatment"] or treatment_in(text)) if booking else ""
             source = "card" if job["treatment"] else "web" if treatment else ""
             data = script(job, treatment) | {"shot": data_uri(shot, "image/jpeg"),
                                              "logo": data_uri(LOGO.read_bytes(), "image/svg+xml")}
@@ -629,7 +706,8 @@ def main(job_path: str) -> int:
             replace(part_of(silent), silent)
             facts = {
                 "made_at": datetime.now().isoformat(timespec="seconds"), "xray_at": job["xray_at"],
-                "angle": job["angle"], "key": job["key"], "treatment": treatment or NO_TREATMENT,
+                "angle": job["angle"], "key": job["key"], "prototype": job["kind"],
+                "treatment": (treatment or NO_TREATMENT) if booking else "",
                 "treatment_from": source, "took": round(time.monotonic() - started), **done,
             }
             files(clinic_id)[1].write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8")

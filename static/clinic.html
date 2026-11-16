@@ -611,11 +611,19 @@ function renderVideo() {
     const about = el("div", "video-about");
     if (video.outdated) about.append(el("p", "draft-warning", "La radiografía es más nueva que este vídeo: hazlo otra vez para que cuenten lo mismo."));
     const from = { card: "de su ficha", web: "de su web" }[made.treatment_from] || "porque no encontré ninguno";
+    // What the prototype of this video is. Videos made before there were several kinds are the booking chat.
+    const otherProto = {
+      review: "el mensaje que le pide la reseña de Google a cada paciente",
+      sources: "el panel que dice de dónde vienen las pacientes (con datos de ejemplo)",
+      posts: "un mes de publicaciones de Instagram esperando su sí",
+    }[made.prototype];
+    const protoSays = otherProto ? "El prototipo es " + otherProto + "."
+      : "En el chat pide cita para «" + made.treatment + "» (" + from + "). Si prefieres otro tratamiento, escríbelo el primero en «Tratamientos estrella» de la ficha y hazlo otra vez.";
     about.append(
       el("p", "", "Hecho el " + sayMoment(made.made_at) + ". Dura " + Math.round(made.seconds) + " segundos y pesa "
         + (made.bytes / 1048576).toFixed(1).replace(".", ",") + " MB. "
         + (made.audio ? "Lleva el audio «" + made.audio.name + "»." : "Sin audio.")),
-      el("p", "sub", "En el chat pide cita para «" + made.treatment + "» (" + from + "). Si prefieres otro tratamiento, escríbelo el primero en «Tratamientos estrella» de la ficha y hazlo otra vez."),
+      el("p", "sub", protoSays),
     );
     const save = link("Descargar el vídeo", "/api/crm/clinics/" + clinicId + "/video.mp4?download=true");
     save.setAttribute("download", "");

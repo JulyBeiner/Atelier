@@ -148,6 +148,27 @@ p { margin: 0; }
 .thanks-box { position: absolute; right: 30px; bottom: 44px; }
 .thanks { display: inline-block; font-family: var(--hand); font-weight: 600; font-size: 25px; color: var(--olive-deep); transform: rotate(-3deg); }
 
+
+/* The other prototypes: a review that gets published, where patients come from, a month of posts */
+.row.published { justify-content: center; }
+.review-card { background: #fff; border-radius: 11px; padding: 7px 14px 8px; text-align: center; font-size: 10.5px; font-weight: 600; }
+.stars { display: block; font-size: 17px; letter-spacing: 2px; line-height: 1.25; color: var(--coral); }
+.stars i { font-style: normal; }
+.panel { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--cream); padding: 12px 14px 14px; }
+.panel h3 { font-family: var(--serif); font-weight: 400; font-size: 20px; line-height: 1.1; margin: 0; }
+.panel .note { font-size: 9.5px; color: var(--muted); margin-top: 4px; }
+.panel .who { color: var(--ink); }
+.bar-row { margin-top: 20px; }
+.bar-label { display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 500; }
+.bar { height: 11px; border-radius: 6px; background: var(--sage); margin-top: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 6px; background: var(--olive-deep); transform-origin: left center; }
+.total { margin-top: auto; background: var(--peach); border-radius: 11px; padding: 8px 12px 9px; font-family: var(--serif); font-size: 16px; }
+.posts-head { display: flex; align-items: center; gap: 8px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 14px; }
+.tile { aspect-ratio: 4 / 5; border-radius: 8px; padding: 7px 6px; display: flex; align-items: flex-end; font-family: var(--serif); font-size: 11.5px; line-height: 1.05; }
+.tile:nth-child(3n+1) { background: var(--peach); }
+.tile:nth-child(3n+2) { background: var(--sage); }
+.tile:nth-child(3n) { background: var(--chat); }
 </style>
 </head>
 <body>
@@ -164,7 +185,7 @@ const DEMO = {
     headline: "Para pedir cita, solo se puede llamar.", detail: "Ni WhatsApp, ni chat, ni reserva online.",
   },
   proto: {
-    kicker: "Así quedaría", sub: "Una paciente os escribe a las 23:14, con la clínica cerrada.",
+    kind: "booking", kicker: "Así quedaría", sub: "Una paciente os escribe a las 23:14, con la clínica cerrada.",
     status: "en línea", input: "Escribe un mensaje", clock: "23:14",
     ask: "Hola, ¿tenéis hueco esta semana para una limpieza facial?", ask_time: "23:14",
     hello: "¡Hola! Soy el asistente de Clínica Demo Aurora. Para una limpieza facial tengo estos huecos:", hello_time: "23:14",
@@ -334,7 +355,7 @@ seen.append(header(V.seen.kicker, V.seen.sub, T.seen + 0.1),
   play(phone("site-phone", "10:24", false, site), "lift", T.seen + 0.2, 0.9),
   play(fact, "rise", T.seen + 2.4, 0.8));
 
-// ---- 3. The prototype: a patient writes at night and the clinic's WhatsApp books her by itself ----
+// ---- 3. The prototype. Its kind decides what the phone shows: booking, review, sources or posts ----
 const P = V.proto;
 const S = T.proto;
 
@@ -377,26 +398,93 @@ function offer(text, time, slots, pick, at, tapAt) {
   return row;
 }
 
+// A review that has just been published: five stars that light up one by one.
+function reviewCard(words, at) {
+  const row = el("div", "row published");
+  const card = el("div", "review-card");
+  const stars = el("span", "stars");
+  for (let index = 0; index < 5; index++) {
+    stars.append(play(el("i", "", "★"), "appear", at + 0.4 + index * 0.15, 0.3, { easing: "ease" }));
+  }
+  card.append(stars, el("span", "", words));
+  row.append(card);
+  return play(row, "enter", at, 0.45);
+}
+
+// The inside of a chat: the clinic's name on top, the messages and the box to write in.
+function chatScreen(rows) {
+  const head = el("div", "chat-head");
+  const who = el("div", "who");
+  who.append(el("b", "", V.clinic), el("span", "", P.status));
+  head.append(el("div", "avatar", V.initials), who);
+  const body = el("div", "chat-body");
+  body.append(...rows);
+  const input = el("div", "chat-input");
+  input.append(el("span", "field", P.input), el("span", "send"));
+  const chat = el("div", "chat");
+  chat.append(head, body, input);
+  return chat;
+}
+
+// Where the patients come from: one bar per channel, growing. The numbers are an example, and it says so.
+function sourcesPanel() {
+  const panel = el("div", "panel");
+  const most = Math.max(...P.rows.map((row) => row[1]));
+  panel.append(play(el("h3", "", P.title), "rise", S + 1.0, 0.6),
+    play(el("p", "note", P.note), "appear", S + 1.2, 0.6, { easing: "ease" }));
+  P.rows.forEach(([name, count], index) => {
+    const at = S + 2.2 + index * 0.9;
+    const label = el("div", "bar-label");
+    label.append(el("span", "", name), play(el("b", "", String(count)), "appear", at + 0.5, 0.4, { easing: "ease" }));
+    const fill = el("i");
+    fill.style.width = Math.round(count / most * 100) + "%";
+    const bar = el("div", "bar");
+    bar.append(play(fill, "grow", at, 0.9));
+    const row = el("div", "bar-row");
+    row.append(label, bar);
+    panel.append(play(row, "appear", at - 0.2, 0.4, { easing: "ease" }));
+  });
+  panel.append(play(el("p", "total", P.total), "rise", S + 6.6, 0.7));
+  return panel;
+}
+
+// A month of posts waiting for a yes: nine tiles that come in one by one.
+function postsPanel() {
+  const panel = el("div", "panel");
+  const head = el("div", "posts-head");
+  const who = el("div", "who");
+  who.append(el("b", "", V.clinic), el("span", "", P.count));
+  head.append(el("div", "avatar", V.initials), who);
+  const tiles = el("div", "tiles");
+  P.tiles.forEach((words, index) => tiles.append(play(el("div", "tile", words), "rise", S + 1.8 + index * 0.5, 0.5)));
+  panel.append(play(head, "rise", S + 1.0, 0.6), tiles, play(el("p", "total", P.ready), "rise", S + 7.2, 0.7));
+  return panel;
+}
+
+const SCREENS = {
+  // A patient writes at night and the clinic's WhatsApp books her by itself.
+  booking: () => phone("chat-phone", P.clock, true, chatScreen([
+    message("patient", P.ask, P.ask_time, S + 1.2),
+    typing(S + 2.2, S + 3.7),
+    offer(P.hello, P.hello_time, P.slots, P.pick, S + 3.7, S + 6.6),
+    message("patient", P.picked, P.picked_time, S + 7.4),
+    typing(S + 8.2, S + 9.7),
+    message("clinic", P.done, P.done_time, S + 9.7),
+  ])),
+  // After her appointment the clinic asks a patient for her review: she taps, and it is on Google.
+  review: () => phone("chat-phone", P.clock, true, chatScreen([
+    message("clinic", P.thanks, P.thanks_time, S + 1.2),
+    offer(P.ask, P.ask_time, [P.button], 0, S + 2.8, S + 5.8),
+    reviewCard(P.published, S + 6.8),
+    message("clinic", P.bye, P.bye_time, S + 9.2),
+  ])),
+  sources: () => phone("panel-phone", P.clock, false, sourcesPanel()),
+  posts: () => phone("panel-phone", P.clock, false, postsPanel()),
+};
+
 const proto = scene("proto", S, T.includes);
-const chatHead = el("div", "chat-head");
-const who = el("div", "who");
-who.append(el("b", "", V.clinic), el("span", "", P.status));
-chatHead.append(el("div", "avatar", V.initials), who);
-const chatBody = el("div", "chat-body");
-chatBody.append(
-  message("patient", P.ask, P.ask_time, S + 1.2),
-  typing(S + 2.2, S + 3.7),
-  offer(P.hello, P.hello_time, P.slots, P.pick, S + 3.7, S + 6.6),
-  message("patient", P.picked, P.picked_time, S + 7.4),
-  typing(S + 8.2, S + 9.7),
-  message("clinic", P.done, P.done_time, S + 9.7),
-);
-const chatInput = el("div", "chat-input");
-chatInput.append(el("span", "field", P.input), el("span", "send"));
-const chat = el("div", "chat");
-chat.append(chatHead, chatBody, chatInput);
 proto.append(header(P.kicker, P.sub, S + 0.1),
-  play(phone("chat-phone", P.clock, true, chat), "lift", S + 0.2, 0.9),
+  play((SCREENS[P.kind] || SCREENS.booking)(), "lift", S + 0.2, 0.9),
   play(el("p", "caption", P.caption), "rise", S + 11.4, 0.8));
 
 // ---- 4. What it would include ----
