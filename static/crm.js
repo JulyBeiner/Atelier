@@ -211,6 +211,37 @@ function filledSays(filled) {
   return names.length > 1 ? names.slice(0, -1).join(", ") + " y " + names[names.length - 1] : names[0] || "";
 }
 
+// ---- The quick X-ray ----
+
+const LEVELS = { hole: "Agujero", improve: "Mejorable", good: "Bien", unknown: "Sin datos" };
+
+// Take a clinic's X-ray: it reads its website again and asks Google how fast it is on a phone.
+// Half a minute or so, and free.
+function takeXray(clinicId) {
+  return send("POST", "/api/crm/clinics/" + clinicId + "/xray");
+}
+
+// Three dots, one per step of the patient's path, colored by how each step is doing.
+function xrayDots(xray) {
+  const words = xray.steps.map((step, index) => (index + 1) + ". " + step.title + ": " + LEVELS[step.level]);
+  const box = el("span", "dots");
+  box.setAttribute("role", "img");
+  box.setAttribute("aria-label", words.join("; "));
+  box.title = words.join("\n");
+  box.append(...xray.steps.map((step) => el("span", "dot " + step.level)));
+  return box;
+}
+
+// "Sin WhatsApp ni reserva online", or what the X-ray says when it found no hole.
+function holeLabel(xray) {
+  return xray.hole ? xray.hole.label : "Sin agujeros a la vista";
+}
+
+// "16 nov a las 14:05"
+function sayMoment(iso) {
+  return shortDay(iso.slice(0, 10)) + " a las " + iso.slice(11, 16);
+}
+
 function stagePill(clinic) {
   return el("span", "pill " + clinic.stage, STAGES[clinic.stage] || clinic.stage);
 }

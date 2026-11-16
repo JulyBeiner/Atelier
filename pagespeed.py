@@ -73,6 +73,8 @@ def measure(url: str, strategy: str) -> dict:
         "ok": True, "strategy": strategy, "scores": scores, "problems": problems,
         "metrics": {name: (audits.get(audit_id, {}).get("displayValue") or "").replace("\xa0", " ")
                     for audit_id, name in METRICS.items()},
+        # The same measurements as numbers (milliseconds; the layout shift has no unit), for rules to compare.
+        "numbers": {name: audits.get(audit_id, {}).get("numericValue") for audit_id, name in METRICS.items()},
         # FAST, AVERAGE or SLOW according to real visitors, when Google has enough of them.
         "real_visitors": data.get("loadingExperience", {}).get("overall_category", ""),
     }

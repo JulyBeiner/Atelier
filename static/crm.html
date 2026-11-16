@@ -92,11 +92,15 @@
         <div><label for="f-kind">Tipo</label><select id="f-kind"></select></div>
         <div><label for="f-stage">Etapa</label><select id="f-stage"></select></div>
         <div><label for="f-batch">Tanda</label><select id="f-batch"></select></div>
+        <div><label for="f-hole">Agujero</label><select id="f-hole"></select></div>
       </div>
       <div class="count-line" id="count-line">
         <span id="count" aria-live="polite"></span>
         <label class="check"><input type="checkbox" id="f-missing">Solo las que no tienen web ni Instagram</label>
-        <button type="button" class="quiet small" id="read-all" hidden></button>
+        <span class="count-actions">
+          <button type="button" class="quiet small" id="read-all" hidden></button>
+          <button type="button" class="quiet small" id="xray-all" hidden></button>
+        </span>
       </div>
 
       <div class="table-wrap">
@@ -106,6 +110,7 @@
               <th data-sort="name"><button type="button">Clínica</button></th>
               <th data-sort="area"><button type="button">Barrio</button></th>
               <th data-sort="stage"><button type="button">Etapa</button></th>
+              <th data-sort="hole"><button type="button">Radiografía</button></th>
               <th data-sort="last_contact_on"><button type="button">Último contacto</button></th>
               <th data-sort="next_step_on"><button type="button">Próximo paso</button></th>
               <th>Abrir</th>
@@ -206,6 +211,11 @@ function todoRow(clinic, mode) {
   if (clinic.next_step_on) meta.append(el("span", "when" + (mode === "late" ? " late" : ""), sayDay(clinic.next_step_on, today)));
   meta.append(stagePill(clinic));
   if (mode === "fresh") {
+    if (clinic.xray) {
+      const hole = el("span", "hole-tag");
+      hole.append(xrayDots(clinic.xray), " " + holeLabel(clinic.xray));
+      meta.append(hole);
+    }
     if (clinic.kind) meta.append(el("span", "", CLINIC_KINDS[clinic.kind]));
     if (!isWeb(clinic.website) && !isWeb(clinic.instagram)) meta.append(el("span", "", "Falta su web y su Instagram"));
   } else {
@@ -271,7 +281,7 @@ function renderToday(data) {
 
 // ---- Clínicas ----
 
-const FILTERS = ["f-search", "f-area", "f-kind", "f-stage", "f-batch"];
+const FILTERS = ["f-search", "f-area", "f-kind", "f-stage", "f-batch", "f-hole"];
 
 // The choices of each filter come from the clinics themselves.
 function fillFilters() {
@@ -285,6 +295,23 @@ function fillFilters() {
   fill("f-kind", "Todos", Object.keys(CLINIC_KINDS), (kind) => CLINIC_KINDS[kind]);
   fill("f-stage", "Todas", Object.keys(STAGES), (stage) => STAGES[stage]);
   fill("f-batch", "Todas", uniques("batch"));
+  // The holes the X-rays found, the heaviest first, plus the clinics with none and the ones not done yet.
+  const holes = new Map();
+  clinics.forEach((clinic) => {
+    const hole = clinic.xray && clinic.xray.hole;
+    if (hole && !holes.has(hole.key)) holes.set(hole.key, hole);
+  });
+  const found = [...holes.values()].sort((a, b) => b.weight - a.weight);
+  const labels = Object.fromEntries(found.map((hole) => [hole.key, hole.label]));
+  labels.clean = "Sin agujeros a la vista";
+  labels.none = "Sin radiografía";
+  fill("f-hole", "Todos", found.map((hole) => hole.key).concat("clean", "none"), (key) => labels[key]);
+}
+
+// Which hole a clinic is in, for the filter: its key, "clean" (X-ray with no hole) or "none" (no X-ray).
+function holeKey(clinic) {
+  if (!clinic.xray) return "none";
+  return clinic.xray.hole ? clinic.xray.hole.key : "clean";
 }
 
 // Coming back from a clinic's card, the filters are as I left them.
@@ -312,12 +339,20 @@ function matches(clinic) {
     && (!$("f-kind").value || clinic.kind === $("f-kind").value)
     && (!$("f-stage").value || clinic.stage === $("f-stage").value)
     && (!$("f-batch").value || clinic.batch === $("f-batch").value)
+    && (!$("f-hole").value || holeKey(clinic) === $("f-hole").value)
     && (!$("f-missing").checked || (!isWeb(clinic.website) && !isWeb(clinic.instagram)));
 }
 
 // Order by the column I clicked. Clinics with nothing in that column go last.
+function holeWeight(clinic) {
+  if (!clinic.xray) return null;
+  const hole = clinic.xray.hole;
+  return hole ? (hole.sure ? hole.weight : 1) : 0;
+}
+
 function inOrder(rows) {
-  const value = (clinic) => sort.key === "stage" ? Object.keys(STAGES).indexOf(clinic.stage) : clinic[sort.key];
+  const value = (clinic) => sort.key === "stage" ? Object.keys(STAGES).indexOf(clinic.stage)
+    : sort.key === "hole" ? holeWeight(clinic) : clinic[sort.key];
   return [...rows].sort((a, b) => {
     const one = value(a), other = value(b);
     const empty = (thing) => thing === null || thing === "";
@@ -341,6 +376,16 @@ function clinicRow(clinic) {
   const stage = el("td");
   stage.append(stagePill(clinic));
 
+  const xray = el("td", clinic.xray ? "" : "blank");
+  if (clinic.xray) {
+    const line = el("div", "xray-cell");
+    line.append(xrayDots(clinic.xray), el("span", "", holeLabel(clinic.xray)));
+    xray.append(line);
+    if (clinic.xray.speed !== null) xray.append(el("div", "sub", "Velocidad en el móvil: " + clinic.xray.speed + " de 100"));
+  } else {
+    xray.append("—");
+  }
+
   const last = el("td", clinic.last_contact_on ? "nowrap" : "blank", clinic.last_contact_on ? sayDay(clinic.last_contact_on, today) : "—");
 
   const next = el("td");
@@ -355,7 +400,7 @@ function clinicRow(clinic) {
 
   const open = el("td");
   open.append(reachLinks(clinic));
-  row.append(name, area, stage, last, next, open);
+  row.append(name, area, stage, xray, last, next, open);
   return row;
 }
 
@@ -378,41 +423,69 @@ function renderList() {
   document.querySelector(".table-wrap").hidden = shown.length === 0;
 }
 
-// Read the websites nobody has read yet, three at a time. For a clinic with no website it looks for one.
-// Free: it only opens each clinic's own website.
-const unread = () => clinics.filter((clinic) => !clinic.website_check && !clinic.do_not_contact);
-let readingAll = false;
+// Do the same slow job for many clinics, three at a time. While it runs, both buttons wait.
+// work(clinic) does the job for one; say(done, total) is the button's words meanwhile. Returns the errors.
+let busy = false;
 
-function showReadAll() {
-  if (readingAll) return;
-  $("read-all").hidden = unread().length === 0;
-  $("read-all").textContent = "Buscar y leer las webs que faltan (" + unread().length + ")";
-}
-
-$("read-all").addEventListener("click", async () => {
-  const waiting = unread();
+async function forEach(button, waiting, work, say) {
   const total = waiting.length;
-  let done = 0, found = 0, failed = 0;
+  let done = 0, failed = 0;
   showError("");
-  readingAll = true;
-  $("read-all").disabled = true;
-  const say = () => { $("read-all").textContent = "Leyendo webs: " + done + " de " + total + "…"; };
+  busy = true;
+  $("read-all").disabled = $("xray-all").disabled = true;
   const worker = async () => {
     while (waiting.length) {
       const clinic = waiting.shift();
-      try {
-        const read = await readWeb(clinic.id);
-        if (["phone", "address"].includes(read.website_check)) found += 1;
-      } catch (error) { failed += 1; }
+      try { await work(clinic); } catch (error) { failed += 1; }
       done += 1;
-      say();
+      button.textContent = say(done, total);
     }
   };
-  say();
+  button.textContent = say(done, total);
   await Promise.all([worker(), worker(), worker()]);
-  readingAll = false;
-  $("read-all").disabled = false;
+  busy = false;
+  $("read-all").disabled = $("xray-all").disabled = false;
+  return failed;
+}
+
+// Read the websites nobody has read yet. For a clinic with no website it looks for one.
+// Free: it only opens each clinic's own website.
+const unread = () => clinics.filter((clinic) => !clinic.website_check && !clinic.do_not_contact);
+
+// The X-ray of every clinic I may write to: the ones that do not have it yet or, when all have it, all again.
+// Free: it opens each clinic's own website and Google PageSpeed.
+const reachable = () => clinics.filter((clinic) => !clinic.do_not_contact);
+const withoutXray = () => reachable().filter((clinic) => !clinic.xray);
+
+function showButtons() {
+  if (busy) return;
+  $("read-all").hidden = unread().length === 0;
+  $("read-all").textContent = "Buscar y leer las webs que faltan (" + unread().length + ")";
+  const missing = withoutXray().length;
+  $("xray-all").hidden = reachable().length === 0;
+  $("xray-all").textContent = missing
+    ? "Hacer la radiografía de las que faltan (" + missing + ")"
+    : "Repetir la radiografía de todas (" + reachable().length + ")";
+}
+
+$("read-all").addEventListener("click", async () => {
+  let found = 0;
+  const waiting = unread();
+  const total = waiting.length;
+  const failed = await forEach($("read-all"), waiting, async (clinic) => {
+    const read = await readWeb(clinic.id);
+    if (["phone", "address"].includes(read.website_check)) found += 1;
+  }, (done, all) => "Leyendo webs: " + done + " de " + all + "…");
   flash("Webs comprobadas: " + found + " de " + total + "." + (failed ? " " + failed + " dieron error." : ""));
+  await refresh();
+});
+
+$("xray-all").addEventListener("click", async () => {
+  const waiting = withoutXray().length ? withoutXray() : reachable();
+  const total = waiting.length;
+  const failed = await forEach($("xray-all"), waiting, (clinic) => takeXray(clinic.id),
+    (done, all) => "Radiografías: " + done + " de " + all + "…");
+  flash("Radiografías hechas: " + (total - failed) + " de " + total + "." + (failed ? " " + failed + " dieron error." : ""));
   await refresh();
 });
 
@@ -456,7 +529,8 @@ FILTERS.concat("f-missing").forEach((id) => $(id).addEventListener("input", () =
 document.querySelectorAll(".clinics th[data-sort] button").forEach((button) => {
   button.addEventListener("click", () => {
     const key = button.parentElement.dataset.sort;
-    sort = { key, up: sort.key === key ? !sort.up : true };
+    // The X-ray column starts with the biggest holes; the others start from the top of the alphabet.
+    sort = { key, up: sort.key === key ? !sort.up : key !== "hole" };
     renderList();
   });
 });
@@ -469,7 +543,7 @@ async function refresh() {
     fillFilters();
     restoreFilters();
     renderList();
-    showReadAll();
+    showButtons();
   } catch (error) { showError("No se pudo cargar el CRM: " + error.message); }
   checkImport();
 }

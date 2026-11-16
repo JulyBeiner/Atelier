@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 import clinic_web
+import xray
 from database import get_connection
 
 router = APIRouter(prefix="/api/crm")
@@ -190,6 +191,9 @@ def as_clinic(row) -> dict:
     clinic = dict(row)
     clinic["do_not_contact"] = bool(clinic["do_not_contact"])
     clinic["web_scan"] = json.loads(clinic["web_scan"])
+    clinic["xray_scan"] = json.loads(clinic["xray_scan"])
+    # Worked out again each time from what was measured and what is on the card: it is instant.
+    clinic["xray"] = xray.build(clinic)
     return clinic
 
 
@@ -289,7 +293,7 @@ def update_clinic(clinic_id: int, changes: ClinicUpdate):
         before = fetch_clinic(connection, clinic_id)
         if "website" in values and values["website"] != before["website"]:
             # A different website has not been read yet: what was known about the old one no longer counts.
-            values |= {"website_check": "", "web_scan": "{}"}
+            values |= {"website_check": "", "web_scan": "{}", "xray_scan": "{}"}
         update(connection, "clinics", clinic_id, values)
         if values.get("do_not_contact"):
             # No follow-ups for a clinic that asked me not to write.
@@ -338,25 +342,53 @@ def change_next_step(clinic_id: int, step: NextStep):
         return fetch_clinic(connection, clinic_id)
 
 
+def save_reading(connection, clinic_id: int, found: dict | None, more: dict) -> list[str]:
+    """Save what reading a clinic's website found, and the other columns in "more". Returns the fields filled.
+
+    What I typed myself is never replaced: only fields that are empty right now are filled. Right now, because
+    reading takes a while and I may have typed something on the card in the meantime.
+    """
+    values, filled = dict(more), []
+    if found is not None:
+        clinic = fetch_clinic(connection, clinic_id)
+        values |= {"website_check": found["check"], "web_scan": json.dumps(found["scan"], ensure_ascii=False)}
+        additions = {"website": found["website"]} | found["profiles"]
+        filled = [field for field, value in additions.items() if value and not clinic[field]]
+        values |= {field: additions[field] for field in filled}
+    update(connection, "clinics", clinic_id, values)
+    touch(connection, clinic_id)
+    return filled
+
+
 @router.post("/clinics/{clinic_id}/read-web")
 def read_web(clinic_id: int):
     """Open the clinic's website, check that it is theirs and collect its social profiles. Free: no API.
 
     With no website in the CRM, it tries the addresses the clinic's name suggests and keeps one only when
-    the page shows the clinic's phone or its street. What I typed myself is never replaced: only empty
-    fields are filled. "filled" lists what was added this time.
+    the page shows the clinic's phone or its street. Only empty fields are filled. "filled" lists what was
+    added this time.
     """
     with get_connection() as connection:
         clinic = fetch_clinic(connection, clinic_id)
     found = clinic_web.look(clinic)  # the slow part, with the database closed
-
-    values = {"website_check": found["check"], "web_scan": json.dumps(found["scan"], ensure_ascii=False)}
-    additions = {"website": found["website"]} | found["profiles"]
-    filled = [field for field, value in additions.items() if value and not clinic[field]]
-    values |= {field: additions[field] for field in filled}
     with get_connection() as connection:
-        update(connection, "clinics", clinic_id, values)
-        touch(connection, clinic_id)
+        filled = save_reading(connection, clinic_id, found, {})
+        return fetch_clinic(connection, clinic_id) | {"filled": filled}
+
+
+@router.post("/clinics/{clinic_id}/xray")
+def take_xray(clinic_id: int):
+    """The quick X-ray of a clinic: where it loses patients. Free: no API.
+
+    It reads the clinic's website again (as "Leer su web" does, filling only empty fields) and asks Google
+    PageSpeed how fast the website is on a phone. Both at once: half a minute or so. A clinic whose website
+    I looked for and did not find is not opened at all. The X-ray itself comes with the clinic, in "xray".
+    """
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+    found, scan = xray.measure(clinic)  # the slow part, with the database closed
+    with get_connection() as connection:
+        filled = save_reading(connection, clinic_id, found, {"xray_scan": json.dumps(scan, ensure_ascii=False)})
         return fetch_clinic(connection, clinic_id) | {"filled": filled}
 
 

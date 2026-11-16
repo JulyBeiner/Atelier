@@ -35,6 +35,7 @@ The candidates wait in the panel. I mark the ones that inspire me and what I lik
 - always a next step with a day. After a diagnosis call the written proposal is set for the next day, as in my method
 - "do not contact", and a button that erases a clinic with its people and its history when someone asks me to
 - it reads a clinic's own website, for free: it checks that the website is really theirs (its phone or its street must be on it) and collects its social profiles. When I do not know the website, it tries the addresses the clinic's name suggests and keeps one only if it passes that check
+- a quick X-ray of each clinic, for free and in about half a minute: where it loses patients, in the order a patient walks. 1) They find it: Google reviews, Instagram, ads, something that measures visits. 2) They choose it: its website, with Google's speed test on a phone. 3) They write and book: WhatsApp, online booking, a chat, a phone that can be tapped. Only checked facts; what cannot be seen from outside becomes a question for the diagnosis call. The biggest hole comes first, in one plain sentence: it is the topic of my video audit. One button for a clinic, one for all of them, and a filter by hole in the list
 
 Atelier never sends a message. The links only open WhatsApp, the phone or the mail on my computer, and I write.
 
@@ -61,7 +62,7 @@ The CRM starts empty. To try it with invented clinics, copy `sample_data/clinics
 
 ## What it costs
 
-The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis, and an estimated 0.25 to 0.40 USD per search for inspiration (the tokens plus 0.01 USD for each web search). Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free. Opening a website to take pictures is free.
+The agent uses the Claude API, which costs money: about 0.16 USD per in-depth analysis, and an estimated 0.25 to 0.40 USD per search for inspiration (the tokens plus 0.01 USD for each web search). Every call is logged, and the agent stops by itself at a fixed budget of 5 USD, set in `web_agent.py`. Google PageSpeed is free. Opening a website to take pictures is free. The CRM, reading a clinic's website and the quick X-ray do not use the Claude API: they are free.
 
 ## What stays private
 
@@ -75,6 +76,7 @@ The clinics and the people of the CRM are real, so they live only in the local d
 - `database.py` — SQLite storage: clients, tasks, reports, API spending and the CRM
 - `crm.py` — the CRM: clinics, people, the history of contacts, next steps and what to do today
 - `clinic_web.py` — finds and reads a clinic's own website: checks that it is theirs and collects its social profiles
+- `xray.py` — the quick X-ray of a clinic: its rules, and the measuring (its website and Google PageSpeed)
 - `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
 - `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts

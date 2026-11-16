@@ -60,6 +60,15 @@
       </div>
     </section>
 
+    <section aria-labelledby="xray-title">
+      <div class="section-head">
+        <h2 id="xray-title">Radiografía rápida</h2>
+        <button type="button" class="quiet small" id="xray-button">Hacer la radiografía</button>
+      </div>
+      <p class="section-note">Dónde pierde pacientes, en el orden en que camina una paciente: la encuentra, la elige y le escribe. Solo hechos comprobados; es gratis.</p>
+      <div id="xray"></div>
+    </section>
+
     <div class="sheet">
       <div>
         <section aria-labelledby="step-title">
@@ -342,10 +351,67 @@ function fillCard() {
   $("k-fit").value = clinic.fit ?? "";
 }
 
+// The quick X-ray: the biggest hole first, then the three steps of the path, then what only the call can tell.
+function renderXray() {
+  const xray = clinic.xray;
+  if (!$("xray-button").disabled) $("xray-button").textContent = xray ? "Repetirla" : "Hacer la radiografía";
+  if (!xray) {
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "sin radiografía"),
+      el("p", "", "Lee su web y le pregunta a Google cómo de rápida es en el móvil. Tarda medio minuto."));
+    $("xray").replaceChildren(block);
+    return;
+  }
+
+  const parts = [];
+  if (xray.warning) parts.push(el("p", "xray-warning", xray.warning));
+
+  const hole = xray.hole;
+  const top = el("div", "xray-top" + (hole && !hole.sure ? " unsure" : ""));
+  if (hole) {
+    const at = xray.steps.findIndex((step) => step.key === hole.step);
+    top.append(el("span", "note", hole.sure ? "tema de tu mini auditoría" : "antes de nada"),
+      el("h3", "", hole.label), el("p", "say", hole.say),
+      el("p", "where", "Paso " + (at + 1) + " del camino: " + xray.steps[at].title + "."));
+  } else {
+    top.append(el("span", "note", "buena señal"), el("h3", "", "No veo agujeros desde fuera"),
+      el("p", "say", "Lo que falta saber no se ve desde fuera: está en las preguntas de la llamada, aquí abajo."));
+  }
+  parts.push(top);
+
+  const steps = el("ol", "steps");
+  xray.steps.forEach((step, index) => {
+    const item = el("li", "step");
+    const head = el("div", "step-head");
+    const name = el("div");
+    name.append(el("span", "step-number", "Paso " + (index + 1)), el("h3", "", step.title));
+    head.append(name, el("span", "pill level " + step.level, LEVELS[step.level]));
+    const facts = el("ul", "facts");
+    facts.append(...step.facts.map((fact) => el("li", fact.ok === true ? "yes" : fact.ok === false ? "no" : "info", fact.text)));
+    item.append(head, el("p", "about", step.about), facts);
+    steps.append(item);
+  });
+  parts.push(steps);
+
+  const unseen = el("div", "unseen");
+  const questions = el("ul");
+  questions.append(...xray.unseen.map((question) => el("li", "", question)));
+  unseen.append(el("h3", "", "Lo que no se ve desde fuera"), el("p", "sub", "Pregúntalo en la llamada de diagnóstico."), questions);
+  parts.push(unseen);
+
+  const sources = [];
+  if (xray.web_at) sources.push("su web, leída por Atelier el " + sayMoment(xray.web_at));
+  if (xray.speed !== null) sources.push("la velocidad, medida por Google PageSpeed");
+  if (clinic.google_rating !== null && clinic.google_reviews !== null) sources.push("la nota de Google, de tu ficha");
+  parts.push(el("p", "xray-foot", "Hecha el " + sayMoment(xray.at) + "." + (sources.length ? " De dónde sale: " + sources.join("; ") + "." : "")));
+  $("xray").replaceChildren(...parts);
+}
+
 function render(withCard) {
   $("sheet").hidden = false;
   renderHeader();
   renderPath();
+  renderXray();
   renderStep();
   renderHistory();
   renderPeople();
@@ -420,6 +486,19 @@ $("read-web").addEventListener("click", async () => {
   } catch (error) { showError(error.message); }
   $("read-web").disabled = false;
   await load(true);  // the card is drawn again, with what was filled in
+});
+
+// The X-ray reads the website again (filling only empty fields, as "Leer su web") and asks Google for its speed.
+$("xray-button").addEventListener("click", async () => {
+  showError("");
+  $("xray-button").disabled = true;
+  $("xray-button").textContent = "Haciendo la radiografía…";
+  try {
+    const taken = await takeXray(clinicId);
+    flash("Radiografía hecha." + (taken.filled.length ? " Y he apuntado: " + filledSays(taken.filled) + "." : ""));
+  } catch (error) { showError(error.message); }
+  $("xray-button").disabled = false;
+  await load(true);  // the card too: the reading may have filled in its website or its networks
 });
 
 // ---- People ----

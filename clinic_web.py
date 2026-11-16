@@ -64,6 +64,20 @@ CHATS = {
     "ManyChat": ("manychat.com",), "JivoChat": ("jivosite", "jivochat"),
     "WhatsApp button": ("joinchat", "click-to-chat", "getbutton.io", "wa-chat", "whatsapp-button"),
 }
+# How a homepage invites a patient to book: "Pide cita", "Reserva tu consulta", "Cita previa"...
+# Read on the text without accents, so "valoración" is "valoracion".
+BOOKING_WORDS = re.compile(
+    r"\b(?:pide|pedir|solicita|solicitar|reserva|reservar|agenda|agendar|concierta|concertar)"
+    r"(?:\s+(?:tu|una|su|ya|ahora))?\s+(?:cita|consulta|valoracion|primera|diagnostico)"
+    r"|\bcita\s+previa|\bbook\s+(?:now|an?\s+appointment)")
+# In a link's path, as a word of its own: "/pedir-cita" yes, "/felicitaciones" no.
+BOOKING_PATHS = re.compile(r"(?<![a-z])(?:citas?|reserv|booking|appointment)")
+# Patients' opinions on a website: a reviews widget, the schema.org rating, or the words themselves.
+REVIEW_WIDGETS = {
+    "Trustindex": ("trustindex",), "Elfsight": ("elfsight",), "EmbedSocial": ("embedsocial",),
+    "Trustpilot": ("trustpilot",), "Google reviews plugin": ("wp-google-places-review", "grw-", "rplg", "google-reviews"),
+}
+REVIEW_WORDS = re.compile(r"\bresenas?\b|\bopiniones\b|\btestimonios?\b|\bvaloraciones\b|lo que dicen")
 
 
 def plain(text: str) -> str:
@@ -253,7 +267,11 @@ def profiles(pages: list[dict], clinic_name: str, website: str) -> tuple[dict, l
 
 
 def signals(pages: list[dict]) -> dict:
-    """First facts for the quick X-ray, from the pages that were read."""
+    """Facts for the quick X-ray (xray.py), from the pages that were read.
+
+    asks_to_book: the homepage invites to book ("Pide cita"), in its text or in a link.
+    reviews: how patients' opinions show up on the website (a widget, the schema.org rating, the words).
+    """
     home = pages[0]
     html = " ".join(page["html"] for page in pages)
     links = [link["url"] for page in pages for link in page.get("links", [])]
@@ -261,6 +279,16 @@ def signals(pages: list[dict]) -> dict:
 
     def union(key: str) -> list[str]:
         return sorted({item for page in pages for item in page.get(key, [])})
+
+    home_links = home.get("links", [])
+    asks_to_book = bool(BOOKING_WORDS.search(plain(home.get("all_text", "")))) or any(
+        BOOKING_WORDS.search(plain(link["text"])) or BOOKING_PATHS.search(site_reader.path_of(link["url"]).lower())
+        for link in home_links)
+    reviews = site_reader.found_in(html, REVIEW_WIDGETS)
+    if "AggregateRating" in union("schema_types"):
+        reviews.append("schema.org rating")
+    if any(REVIEW_WORDS.search(plain(page.get("all_text", ""))) for page in pages):
+        reviews.append("words")
 
     return {
         "title": home.get("title", ""),
@@ -279,6 +307,8 @@ def signals(pages: list[dict]) -> dict:
         "chats": site_reader.found_in(html, CHATS),
         "other": {name: next((link for link in links if any(site in link for site in sites)), "")
                   for name, sites in OTHER.items()},
+        "asks_to_book": asks_to_book,
+        "reviews": reviews,
     }
 
 
