@@ -10,7 +10,7 @@ Every fact comes from something checked: the clinic's own website, Google PageSp
 they send reminders) is never guessed: it becomes a question for the diagnosis call.
 
 The biggest hole is the one with the most weight: the one that loses the most patients. It is the topic of
-my two-minute video audit, the first thing I show the clinic.
+the proposal and the prototype I send the clinic first.
 
 Two halves:
 - measure() opens things: the clinic's website and Google's speed test. It is slow (half a minute).

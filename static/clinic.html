@@ -69,6 +69,12 @@
       <div id="xray"></div>
     </section>
 
+    <section aria-labelledby="draft-title" id="mensaje">
+      <h2 id="draft-title">Mensaje para escribirle</h2>
+      <p class="section-note">Lleva tu propuesta y su prototipo, y sale de su agujero más grande. Atelier no envía nada: pegas los dos enlaces, lo repasas, lo copias y lo mandas tú.</p>
+      <div id="draft"></div>
+    </section>
+
     <div class="sheet">
       <div>
         <section aria-labelledby="step-title">
@@ -370,7 +376,7 @@ function renderXray() {
   const top = el("div", "xray-top" + (hole && !hole.sure ? " unsure" : ""));
   if (hole) {
     const at = xray.steps.findIndex((step) => step.key === hole.step);
-    top.append(el("span", "note", hole.sure ? "tema de tu mini auditoría" : "antes de nada"),
+    top.append(el("span", "note", hole.sure ? "tema de tu propuesta" : "antes de nada"),
       el("h3", "", hole.label), el("p", "say", hole.say),
       el("p", "where", "Paso " + (at + 1) + " del camino: " + xray.steps[at].title + "."));
   } else {
@@ -407,11 +413,159 @@ function renderXray() {
   $("xray").replaceChildren(...parts);
 }
 
+// ---- The message to write to the clinic ----
+
+// What I choose on screen, and what I change in each text: switching channel or kind never loses my changes.
+const draftChoice = { kind: "", channel: "" };
+const draftEdits = new Map();
+let draftsFor = "";  // the clinic and X-ray the choices above belong to
+
+
+// The clinic's WhatsApp number: the one its website links to, or its phone when it is a mobile.
+function whatsappNumber() {
+  const linked = ((clinic.web_scan || {}).signals || {}).whatsapp || "";
+  const fromLink = (linked.match(/wa\.me\/(\d+)/) || linked.match(/phone=(\d+)/) || [])[1];
+  if (fromLink) return fromLink;
+  const national = (clinic.phone || "").replace(/\D/g, "").replace(/^(00)?34(?=\d{9}$)/, "");
+  return /^[67]\d{8}$/.test(national) ? "34" + national : "";
+}
+
+function instagramHandle() {
+  const match = (clinic.instagram || "").match(/instagram\.com\/([^/?#]+)/i);
+  return match ? match[1] : "";
+}
+
+function emailAddress() {
+  const person = clinic.people.find((one) => one.decides && one.email) || clinic.people.find((one) => one.email);
+  return clinic.email || (person ? person.email : "");
+}
+
+function choicePills(name, options, chosen, onPick) {
+  const box = el("div", "choices");
+  box.setAttribute("role", "radiogroup");
+  Object.entries(options).forEach(([value, label]) => {
+    const pill = el("button", "choice" + (value === chosen ? " on" : ""), label);
+    pill.type = "button";
+    pill.setAttribute("role", "radio");
+    pill.setAttribute("aria-checked", String(value === chosen));
+    pill.onclick = () => onPick(value);
+    box.append(pill);
+  });
+  return box;
+}
+
+function renderDraft() {
+  const drafts = clinic.drafts;
+  if (!drafts.ready) {
+    const block = el("div", "empty-block");
+    block.append(el("span", "note", "antes de nada"), el("p", "", drafts.why));
+    $("draft").replaceChildren(block);
+    return;
+  }
+  // A new X-ray (or another clinic) starts the choices again from what its hole suggests.
+  const key = clinicId + "|" + clinic.xray.at;
+  if (draftsFor !== key) {
+    draftsFor = key;
+    draftEdits.clear();
+    draftChoice.kind = drafts.kind;
+    draftChoice.channel = instagramHandle() ? "instagram" : whatsappNumber() ? "whatsapp" : emailAddress() ? "email" : "instagram";
+  }
+  const editKey = draftChoice.kind + "|" + draftChoice.channel;
+  const template = drafts.texts[draftChoice.kind][draftChoice.channel];
+  const current = draftEdits.get(editKey) || template;
+  const pick = (field) => (value) => { draftChoice[field] = value; renderDraft(); };
+
+  const controls = el("div", "draft-controls");
+  const kindBox = el("div");
+  kindBox.append(el("label", "", "Qué mensaje"), choicePills("kind",
+    Object.fromEntries(Object.entries(drafts.kinds).map(([kind, info]) => [kind, info.label])), draftChoice.kind, pick("kind")));
+  const channelBox = el("div");
+  channelBox.append(el("label", "", "Por dónde"), choicePills("channel", drafts.channels, draftChoice.channel, pick("channel")));
+  controls.append(kindBox, channelBox);
+  const why = el("p", "sub draft-why", "Le hablo de " + drafts.angle.toLowerCase() + ", por su agujero: " + drafts.hole + ".");
+
+  const writing = el("div", "draft-box");
+  const remember = () => draftEdits.set(editKey, { subject: subject ? subject.value : "", text: text.value });
+  let subject = null;
+  if (draftChoice.channel === "email") {
+    const label = el("label", "", "Asunto");
+    label.htmlFor = "draft-subject";
+    subject = el("input");
+    subject.id = "draft-subject";
+    subject.value = current.subject;
+    subject.addEventListener("input", remember);
+    writing.append(label, subject);
+  }
+  const label = el("label", "", "Mensaje" + (drafts.to ? " para " + drafts.to : ""));
+  label.htmlFor = "draft-text";
+  const text = el("textarea");
+  text.id = "draft-text";
+  text.rows = draftChoice.channel === "email" ? 13 : 7;
+  text.value = current.text;
+  writing.append(label, text);
+  // The links I still have to paste: the proposal and the prototype.
+  const missingLinks = () => drafts.links.filter((placeholder) => text.value.includes(placeholder));
+  const missing = el("p", "draft-warning");
+  const checkLink = () => {
+    const left = missingLinks();
+    missing.hidden = left.length === 0;
+    missing.textContent = "Falta pegar " + left.map((placeholder) => placeholder.slice(1, -1).replace("enlace a", "el enlace a")).join(" y ") + ".";
+  };
+  text.addEventListener("input", () => { remember(); checkLink(); });
+  checkLink();
+  writing.append(missing);
+
+  const actions = el("div", "draft-actions");
+  const copy = el("button", "quiet small", "Copiar");
+  copy.type = "button";
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(text.value); }
+    catch (error) { text.select(); document.execCommand("copy"); }
+    flash(missingLinks().length ? "Copiado. Ojo: faltan enlaces por pegar." : "Copiado. Cuando lo mandes, pulsa «Ya lo he enviado».");
+  };
+  actions.append(copy);
+  // A link that only opens my own app with the message ready (Instagram cannot take the text: I paste it).
+  // Sending is always me. The link follows what I write in the box.
+  const phone = whatsappNumber(), handle = instagramHandle(), address = emailAddress();
+  const target = {
+    whatsapp: phone ? () => "https://wa.me/" + phone + "?text=" + encodeURIComponent(text.value) : null,
+    instagram: handle ? () => "https://ig.me/m/" + handle : null,
+    email: address ? () => "mailto:" + encodeURIComponent(address).replace("%40", "@")
+      + "?subject=" + encodeURIComponent(subject.value) + "&body=" + encodeURIComponent(text.value) : null,
+  }[draftChoice.channel];
+  const words = {
+    whatsapp: ["Abrir WhatsApp con el mensaje", "No tengo un móvil suyo para WhatsApp."],
+    instagram: ["Abrir su Instagram", "No tengo su Instagram: apúntalo en la ficha."],
+    email: ["Abrir el correo con el mensaje", "No tengo su correo: apúntalo en la ficha o en una persona."],
+  }[draftChoice.channel];
+  if (target) {
+    const open = link(words[0], target());
+    const follow = () => { open.href = target(); };
+    text.addEventListener("input", follow);
+    if (subject) subject.addEventListener("input", follow);
+    actions.append(open);
+  } else {
+    actions.append(el("span", "sub", words[1]));
+  }
+  const sent = el("button", "quiet small", "Ya lo he enviado");
+  sent.type = "button";
+  sent.onclick = () => {
+    showError("");
+    openContact(clinicId, load, {
+      kind: drafts.kinds[draftChoice.kind].contact, channel: draftChoice.channel, summary: text.value,
+    });
+  };
+  actions.append(sent);
+
+  $("draft").replaceChildren(controls, why, writing, actions);
+}
+
 function render(withCard) {
   $("sheet").hidden = false;
   renderHeader();
   renderPath();
   renderXray();
+  if (!$("draft").contains(document.activeElement)) renderDraft();
   renderStep();
   renderHistory();
   renderPeople();
@@ -554,7 +708,7 @@ askTwice($("delete"), "Sí, borrar para siempre", async () => {
 });
 
 $("p-prefers").append(option("", "No lo sé"), ...Object.keys(CHANNELS).map((channel) => option(channel, CHANNELS[channel])));
-load(true);
+load(true).then(() => { if (location.hash === "#mensaje") $("mensaje").scrollIntoView(); });
 </script>
 </body>
 </html>

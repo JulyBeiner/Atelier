@@ -276,7 +276,9 @@ const CONTACT_FORM = `
   </form>`;
 
 // Open the window for one clinic. onSaved gets the clinic as it is after saving.
-async function openContact(clinicId, onSaved) {
+// preset can bring the kind of contact, the channel and the text (from the message I just sent).
+async function openContact(clinicId, onSaved, preset) {
+  preset = preset || {};
   let clinic;
   try {
     clinic = await api("/api/crm/clinics/" + clinicId);  // fresh: its people and its next step
@@ -292,11 +294,12 @@ async function openContact(clinicId, onSaved) {
   const today = isoDay(new Date());
   $("c-clinic").textContent = clinic.name + ". Ahora está en «" + STAGES[clinic.stage] + "».";
   $("c-kind").append(...Object.keys(KINDS).filter((kind) => kind !== "stage").map((kind) => option(kind, KINDS[kind])));
-  $("c-kind").value = LIKELY[clinic.stage] || "note";
+  $("c-kind").value = preset.kind || LIKELY[clinic.stage] || "note";
   $("c-channel").append(option("", "Sin canal"), ...Object.keys(CHANNELS).map((channel) => option(channel, CHANNELS[channel])));
   let remembered = "";
   try { remembered = localStorage.getItem("atelier.crm.channel") || ""; } catch (error) { /* works the same without it */ }
-  $("c-channel").value = remembered in CHANNELS ? remembered : "";
+  $("c-channel").value = preset.channel in CHANNELS ? preset.channel : remembered in CHANNELS ? remembered : "";
+  if (preset.summary) $("c-summary").value = preset.summary;
   $("c-day").value = today;
   $("c-day").max = today;
   if (clinic.people.length) {

@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 import clinic_web
+import outreach
 import xray
 from database import get_connection
 
@@ -43,7 +44,7 @@ MOVES_TO = {
     "proposal_sent": "proposal_sent",
 }
 # The kinds of contact that count as me writing to a clinic.
-OUTREACH = ("message_sent", "audit_sent")
+OUTREACH = ("message_sent", "audit_sent", "proposal_sent")
 
 NUMBER_FIELDS = ("google_rating", "google_reviews", "fit")
 # The social networks a clinic has a field for, and the start of a profile's address on each.
@@ -270,7 +271,7 @@ def create_clinic(new_clinic: ClinicCreate):
 
 @router.get("/clinics/{clinic_id}")
 def get_clinic(clinic_id: int):
-    """One clinic with its people and its history, newest first."""
+    """One clinic with its people, its history (newest first) and the drafts of the message to write to it."""
     with get_connection() as connection:
         clinic = fetch_clinic(connection, clinic_id)
         people = connection.execute(
@@ -283,7 +284,10 @@ def get_clinic(clinic_id: int):
             " WHERE clinic_history.clinic_id = ? ORDER BY happened_on DESC, clinic_history.id DESC",
             (clinic_id,),
         ).fetchall()
-    return clinic | {"people": [as_person(row) for row in people], "history": [dict(row) for row in history]}
+    people = [as_person(row) for row in people]
+    history = [dict(row) for row in history]
+    # The first message, written around its biggest hole. Atelier never sends it: I copy it.
+    return clinic | {"people": people, "history": history, "drafts": outreach.drafts(clinic, people, history)}
 
 
 @router.patch("/clinics/{clinic_id}")
@@ -496,7 +500,8 @@ def today():
                 "open": count(f"SELECT COUNT(*) FROM clinics WHERE stage IN ({open_marks})", OPEN_STAGES),
                 "clients": count("SELECT COUNT(*) FROM clinics WHERE stage = 'client'"),
                 "written_today": count(
-                    "SELECT COUNT(DISTINCT clinic_id) FROM clinic_history WHERE happened_on = ? AND kind IN (?, ?)",
+                    "SELECT COUNT(DISTINCT clinic_id) FROM clinic_history WHERE happened_on = ? AND kind IN ("
+                    + ", ".join("?" * len(OUTREACH)) + ")",
                     (this_day, *OUTREACH)),
             },
         }

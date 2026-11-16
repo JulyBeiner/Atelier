@@ -226,6 +226,7 @@ function todoRow(clinic, mode) {
 
   const side = el("div", "todo-side");
   side.append(reachLinks(clinic));
+  if (mode === "fresh" && clinic.xray) side.append(link("Mensaje", "/crm/clinics/" + clinic.id + "#mensaje"));
   const note = el("button", "quiet small", "Apuntar contacto");
   note.onclick = () => { showError(""); openContact(clinic.id, refresh); };
   side.append(note);
