@@ -1,4 +1,5 @@
 """Takes screenshots of a website on desktop and on mobile, the way a visitor sees it.
+On the phone it also taps the menu button of the homepage, to check that the menu really opens.
 
 The Web agent starts this file as its own process, so the browser never blocks the panel.
 Try it by hand:   python capture.py shots https://example.com
@@ -61,8 +62,35 @@ HIDE_PINNED = """() => {
   }
 }"""
 
+# What a visitor can really see and touch on the screen right now. The scripts below start with this.
+# Something only counts when it has a size, is not transparent, and nothing is lying on top of it.
+ON_SCREEN = r"""
+  const onScreen = (el) => {
+    const box = el.getClientRects()[0];
+    if (!box || box.width < 2 || box.height < 2) return null;
+    const x = box.left + box.width / 2, y = box.top + box.height / 2;
+    if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return null;
+    if (el.checkVisibility && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return null;
+    const front = document.elementFromPoint(x, y);
+    return { x: Math.round(x), y: Math.round(y), width: box.width, height: box.height,
+             covered: !(front && (front === el || el.contains(front))) };
+  };
+  const words = (el) => (el.innerText || '').replace(/\s+/g, ' ').trim();
+  const linksOnScreen = () => [...document.querySelectorAll('a[href]')].filter((link) => {
+    const spot = onScreen(link);
+    return spot && !spot.covered && !/^(tel:|mailto:|javascript:)|wa\.me\/|whatsapp\.com/i.test(link.href);
+  });
+  const MENU_AREA = 'header, nav, [role="navigation"], [role="banner"], [class*="nav" i], [class*="menu" i],'
+                  + ' [class*="header" i], [id*="nav" i], [id*="menu" i], [id*="header" i]';
+  // Menu links: inside a header or menu, with words, and leading somewhere else (the logo leads to this same page).
+  const here = location.href.split('#')[0];
+  const menuLinks = () => [...new Set(linksOnScreen()
+    .filter((link) => link.closest(MENU_AREA) && (link.hash || link.href.split('#')[0] !== here))
+    .map(words).filter((text) => text.length >= 3))].slice(0, 12);
+"""
+
 # Facts you cannot get from a picture: real sizes, font names, and whether the page spills sideways.
-PAGE_FACTS = """() => {
+PAGE_FACTS = "() => {" + ON_SCREEN + """
   const doc = document.documentElement;
   const seen = (el) => { const box = el.getBoundingClientRect(); return box.width > 0 && box.height > 0; };
   const font = (el) => el ? getComputedStyle(el).fontFamily.split(',')[0].replace(/["']/g, '').trim() : '';
@@ -82,8 +110,75 @@ PAGE_FACTS = """() => {
     text_font: font(paragraph), text_size: size(paragraph),
     small_texts: smallTexts,
     cookie_notice: pinned.some((el) => /cookie/i.test(el.innerText || '')),
+    menu_links: menuLinks(),
   };
 }"""
+
+# A cookie notice can lie on top of the menu button. Say yes to it, as most visitors do.
+ACCEPT_COOKIES = r"""() => {
+  const yes = /^(aceptar|acepto|permitir|entendido|de acuerdo|vale|ok|accept|allow|agree|i agree|got it)\b/i;
+  for (const el of document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]')) {
+    const text = (el.innerText || el.value || '').trim();
+    if (!text || text.length > 40 || !yes.test(text) || (el.checkVisibility && !el.checkVisibility())) continue;
+    for (let box = el.parentElement, up = 0; box && up < 6; box = box.parentElement, up++) {
+      const around = box.innerText || '';
+      if (around.length < 1500 && /cookie/i.test(around + ' ' + box.id + ' ' + box.getAttribute('class'))) {
+        el.click();
+        return true;
+      }
+    }
+  }
+  return false;
+}"""
+
+# On a phone the menu usually hides behind a button. This lists the menu links already in sight
+# and the things that could be that button: first the ones whose name says so ("menu", "toggle", three bars…),
+# then small drawings with no words near the top. It also remembers every link in sight, to tell later which are new.
+MENU_BUTTONS = "() => {" + ON_SCREEN + r"""
+  const HINT = /men[uú]|naveg|navigation|hamburg|burger|toggle|offcanvas|drawer|bars/i;
+  const OTHER_JOB = new RegExp('lang|idioma|search|busca|carrito|cesta|cookie|consent|privac|login|cuenta|account|chat'
+                               + '|whatsapp|compartir|carousel|swiper|slick|\\b(cart|share|prev|next|play|pause|mute)\\b', 'i');
+  window.__atelierLinks = new Set(linksOnScreen());
+  window.__atelierScroll = window.scrollY;
+  const buttons = [];
+  const consider = (el) => {
+    const spot = onScreen(el);
+    if (!spot || spot.width > 240 || spot.height > 140) return;            // a button, not a whole block
+    if (buttons.some((other) => Math.abs(other.x - spot.x) < 12 && Math.abs(other.y - spot.y) < 12)) return;
+    const href = el.tagName === 'A' ? (el.getAttribute('href') || '').trim() : '';
+    if (href && !/^(#|javascript:)/i.test(href)) return;                  // a real link: it goes to another page
+    const text = words(el);
+    const name = (text.length > 2 && text) || el.getAttribute('aria-label') || el.title || text;
+    const about = [el.id, el.getAttribute('class'), el.getAttribute('aria-controls'), el.getAttribute('data-target'),
+                   el.getAttribute('data-bs-target'), el.getAttribute('for'), href, name].join(' ');
+    if (OTHER_JOB.test(about)) return;
+    const named = HINT.test(about) || HINT.test(el.innerHTML.slice(0, 400)) || (el.hasAttribute('aria-expanded') && spot.y < 170);
+    if (href.length > 2 && !named) return;                                 // a link to a section of this same page
+    const drawing = text.length <= 2 && spot.width <= 96 && spot.height <= 96 && spot.y < 170;
+    if (!named && !drawing) return;
+    buttons.push({ x: spot.x, y: spot.y, named, covered: spot.covered, label: name.replace(/\s+/g, ' ').slice(0, 40) });
+  };
+  document.querySelectorAll('button, summary, [role="button"], label[for], a, [onclick], [aria-expanded], [aria-controls]')
+          .forEach(consider);
+  // Things with no button tag that still invite a tap: the cursor turns into a hand over them.
+  for (const el of [...document.querySelectorAll('body *')].slice(0, 4000)) {
+    if (getComputedStyle(el).cursor === 'pointer' && getComputedStyle(el.parentElement).cursor !== 'pointer'
+        && !el.closest('a[href], button')) consider(el);
+  }
+  const order = (button) => (button.named ? (button.covered ? 1 : 0) : 2);
+  buttons.sort((a, b) => order(a) - order(b) || a.y - b.y);
+  return { links: menuLinks(), buttons };
+}"""
+
+# After a tap: the links in sight that were not there before. null when the tap took us to another page.
+# If the page moved up or down instead, the new links are just the next stretch of the page, not a menu.
+NEW_LINKS = "() => {" + ON_SCREEN + r"""
+  const before = window.__atelierLinks;
+  if (!before) return null;
+  if (Math.abs(window.scrollY - window.__atelierScroll) > 4) return [];
+  return [...new Set(linksOnScreen().filter((link) => !before.has(link)).map(words).filter((text) => text.length >= 2))];
+}"""
+MENU_TRIES = 4
 
 
 def launch(playwright):
@@ -138,6 +233,50 @@ def shoot_stretch(page, session, joiner, path: Path, device: str, top: int, heig
     joiner.screenshot(path=str(path), type="jpeg", quality=JPEG_QUALITY, full_page=True)
 
 
+def look_for_menu(page, url: str) -> dict:
+    """On a phone: is the menu in sight, or is there a button that opens it? Taps the likely buttons to find out.
+
+    "links" are the menu links in sight before touching anything. "button" is the one that opened the menu
+    and "opened" the links that appeared. "tried" are the buttons that were tapped and showed nothing.
+    """
+    found = {"links": [], "button": "", "opened": [], "tried": [], "error": ""}
+
+    def fresh_page() -> dict:
+        page.goto(url, wait_until="load", timeout=20_000)
+        page.wait_for_timeout(1_500)
+        if page.evaluate(ACCEPT_COOKIES):
+            page.wait_for_timeout(600)
+        state = page.evaluate(MENU_BUTTONS)
+        if any(button["named"] and button["covered"] for button in state["buttons"]):
+            page.wait_for_timeout(2_500)  # an opening animation may still be on top of the page
+            state = page.evaluate(MENU_BUTTONS)
+        return state
+
+    try:
+        state = fresh_page()
+        found["links"] = state["links"]
+        for number in range(min(len(state["buttons"]), MENU_TRIES)):
+            if number:
+                state = fresh_page()  # the last tap may have left something open
+                if number >= len(state["buttons"]):
+                    break
+            button, here = state["buttons"][number], page.url.split("#")[0]
+            page.touchscreen.tap(button["x"], button["y"])
+            appeared = []
+            for _ in range(4):  # menus slide or fade in: look a few times
+                page.wait_for_timeout(600)
+                appeared = page.evaluate(NEW_LINKS) if page.url.split("#")[0] == here else None
+                if appeared is None or len(appeared) >= 2:
+                    break
+            if appeared and len(appeared) >= 2:
+                found["button"], found["opened"] = button["label"], appeared[:12]
+                break
+            found["tried"].append({"label": button["label"], "named": button["named"]})
+    except Exception as error:
+        found["error"] = f"{type(error).__name__}: {error}"[:200]
+    return found
+
+
 def capture_page(browser, joiner, url: str, index: int, device: str, folder: Path) -> dict:
     """Open one page on one device, look at it, and save its pictures."""
     result = {"url": url, "device": device, "shots": [], "facts": {}, "error": ""}
@@ -179,6 +318,10 @@ def capture_page(browser, joiner, url: str, index: int, device: str, folder: Pat
             path = folder / f"p{index}-{device}-{number + 1}.jpg"
             shoot_stretch(page, session, joiner, path, device, top, height)
             result["shots"].append(shot_facts(path, device, top, height, OVERVIEW[device], str(number + 1)))
+
+        if index == 0 and device == "mobile":
+            # Last, because it taps things. The pictures are already saved.
+            facts["menu"] = look_for_menu(page, url)
     except Exception as error:
         result["error"] = f"{type(error).__name__}: {error}"[:300]
     finally:

@@ -43,6 +43,8 @@ BASE_DIR = Path(__file__).parent
 REPORTS_DIR = BASE_DIR / "reports"  # screenshots live here; git ignores this folder
 INNER_PAGES_TO_SHOOT = 3
 CAPTURE_SECONDS = 240
+# Fewer links than this in sight is a logo and a button, not a menu.
+MENU_LINKS = 3
 
 # key, title in the report, and the PageSpeed score that replaces the agent's estimate when there is one.
 AREAS = [
@@ -85,7 +87,8 @@ What belongs in each area:
 - design: first impression, layout, typography, colors, photos, spacing, consistency. From the screenshots.
 - content: what the texts say, how clear the offer is, headlines, calls to action, tone, missing information.
 - structure: menu, pages and how they connect, broken links, dead ends, what a visitor cannot find.
-- mobile: how it looks and works on a phone. From the mobile screenshots and the mobile facts.
+- mobile: how it looks and works on a phone, and whether a visitor can reach the menu.
+  From the mobile screenshots and the mobile facts.
 - speed: how fast it loads.
 - seo: how well Google can understand and show the site: titles, descriptions, headings, sitemap, structured data.
 - accessibility: whether everyone can use it: contrast, text size, alternative texts, labels, heading order.
@@ -296,6 +299,32 @@ def describe_views(views: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def mobile_menu_check(menu: dict, desktop_links: list[str] | None) -> tuple[bool | None, str]:
+    """Can a visitor on a phone reach the menu? Yes, no, or None when the code could not tell.
+
+    menu is what capture.py found by tapping the homepage on a phone.
+    desktop_links are the menu links in sight on a computer, or None if the computer view failed.
+    """
+    if menu["opened"]:
+        name = f" («{menu['button']}»)" if menu["button"] else ""
+        return True, (f"Hay botón de menú{name}: al tocarlo aparecen {len(menu['opened'])} enlaces"
+                      f" ({site_reader.few(menu['opened'], 4)})")
+    if len(menu["links"]) >= MENU_LINKS:
+        return True, f"El menú está a la vista, sin tocar nada: {site_reader.few(menu['links'], 4)}"
+    if menu["error"]:
+        return None, "No pude comprobarlo: el navegador falló al probar el menú"
+    named = [button["label"] for button in menu["tried"] if button["named"]]
+    if named:
+        name = f" («{named[0]}»)" if named[0] else ""
+        return None, f"Vi un botón que parece de menú{name}, pero al tocarlo no apareció ningún enlace. Pruébalo en tu móvil"
+    if desktop_links is None:
+        return None, "En móvil no vi menú ni botón que lo abra, y no pude ver la web en ordenador para comparar"
+    if len(desktop_links) < MENU_LINKS:
+        return None, "No vi menú ni botón de menú en la primera pantalla, ni en móvil ni en ordenador"
+    return False, ("En la primera pantalla del móvil no hay menú ni botón que lo abra."
+                   f" En ordenador se ven {len(desktop_links)} enlaces de menú ({site_reader.few(desktop_links, 4)})")
+
+
 def add_browser_checks(checks: list[dict], views: list[dict]) -> None:
     """Checks that only a real browser can answer. They join the list the code already verified."""
     seen = [view for view in views if view["facts"]]
@@ -306,6 +335,13 @@ def add_browser_checks(checks: list[dict], views: list[dict]) -> None:
         spilling = [site_reader.path_of(view["url"]) for view in mobile if view["facts"]["spills_sideways"]]
         checks.append({"key": "mobile_fit", "label": "En móvil la página cabe en la pantalla (sin moverla de lado)",
                        "ok": not spilling, "detail": site_reader.few(spilling)})
+        home = next((view for view in mobile if view["facts"].get("menu")), None)
+        if home:  # the menu is tried on the homepage only
+            on_desktop = next((view["facts"].get("menu_links", []) for view in seen
+                               if view["device"] == "desktop" and view["url"] == home["url"]), None)
+            ok, detail = mobile_menu_check(home["facts"]["menu"], on_desktop)
+            checks.append({"key": "mobile_menu", "label": "En móvil se llega al menú desde la primera pantalla",
+                           "ok": ok, "detail": detail})
     failures = sorted({failure for view in seen for failure in view["facts"]["failed_requests"]})
     checks.append({"key": "loads_clean", "label": "Todo carga sin errores (imágenes, estilos, programas)",
                    "ok": not failures, "detail": site_reader.few(failures, 3)})

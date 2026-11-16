@@ -11,7 +11,7 @@ Small tasks: the agents do them and tell me. Important tasks: they prepare every
 **The Web agent, step 1 of my method: look at what the client already has.** One click starts an in-depth analysis of a client's website:
 
 - it reads the whole site (up to 40 pages) and checks facts instead of guessing: broken links, legal pages, titles, descriptions, headings, images without alt text, sitemap, robots, the 404 page and https
-- it takes screenshots on desktop and on mobile
+- it takes screenshots on desktop and on mobile, and taps the phone menu to check that it really opens
 - it measures the homepage with Google PageSpeed: speed, accessibility, good practices and SEO
 - it asks Claude for a report: eight areas with a score from 0 to 100, what to change first, and questions for me
 
