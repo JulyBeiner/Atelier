@@ -792,6 +792,44 @@ def data_uri(content: bytes, kind: str) -> str:
     return f"data:{kind};base64," + base64.b64encode(content).decode("ascii")
 
 
+# A window that covers the clinic's website when it opens (an offer, a newsletter). A visitor closes it to
+# see the website, and so does the picture. Only a window pinned over the page, really in front, that covers
+# a good part of the screen and has its own close button (a cross, "Cerrar"): nothing else is touched.
+# Cookie notices are not its job.
+CLOSE_POPUPS = r"""() => {
+  const WINDOWS = '[role="dialog"], [aria-modal="true"], dialog[open], [class*="popup" i], [class*="modal" i], [class*="lightbox" i]';
+  const NAMED = '[aria-label*="cerrar" i], [aria-label*="close" i], [title*="cerrar" i], [title*="close" i],'
+    + ' [class*="close" i], [class*="cerrar" i], [class*="dismiss" i], [data-dismiss]';
+  const words = /^(×|✕|✖|x|cerrar|close)$/i;
+  const shown = (el) => !el.checkVisibility || el.checkVisibility();
+  // A close button is small and says nothing, or only "x" or "Cerrar": never a button with an offer on it.
+  const closes = (el) => {
+    const text = (el.innerText || '').trim();
+    const width = el.getBoundingClientRect().width;
+    return shown(el) && width > 0 && width <= 120 && (text === '' || words.test(text));
+  };
+  const screen = innerWidth * innerHeight;
+  const closed = [];
+  for (const box of document.querySelectorAll(WINDOWS)) {
+    if (closed.some((one) => one.contains(box) || box.contains(one))) continue;
+    if (!box.isConnected || !shown(box) || (getComputedStyle(box).position !== 'fixed' && !box.matches('dialog[open]'))) continue;
+    if (/cookie/i.test((box.innerText || '') + ' ' + box.id + ' ' + box.getAttribute('class'))) continue;
+    const place = box.getBoundingClientRect();
+    const seen = Math.max(0, Math.min(place.right, innerWidth) - Math.max(place.left, 0))
+      * Math.max(0, Math.min(place.bottom, innerHeight) - Math.max(place.top, 0));
+    if (seen < screen * 0.3) continue;
+    const front = document.elementFromPoint(Math.min(Math.max(place.left + place.width / 2, 1), innerWidth - 1),
+                                            Math.min(Math.max(place.top + place.height / 2, 1), innerHeight - 1));
+    if (!front || !box.contains(front)) continue;
+    const closer = [...box.querySelectorAll(NAMED), ...box.querySelectorAll('button, a, [role="button"]')].find(closes);
+    if (!closer) continue;
+    (closer.closest('button, a, [role="button"]') || closer).click();
+    closed.push(box);
+  }
+  return closed.length;
+}"""
+
+
 def ask(page, script: str, value=None):
     """Run a script in the page and give back its answer, or None when the page does not answer in a few
     seconds. A page whose own scripts keep it busy would make a plain evaluate() wait for ever; this way
@@ -828,8 +866,12 @@ def look(browser, url: str, scripts: bool = True) -> tuple[bytes, str]:
             pass  # some pages never go quiet (chats, video): what has loaded is enough
         page.wait_for_timeout(2_000)  # the opening animation
         tell(0.06, "Quitando el aviso de cookies…")
-        if ask(page, capture.ACCEPT_COOKIES):
+        for _ in range(2):  # a second notice sometimes comes up when the first one goes
+            if not ask(page, capture.ACCEPT_COOKIES):
+                break
             page.wait_for_timeout(900)  # so the cookie notice is not what the picture shows
+        if ask(page, CLOSE_POPUPS):
+            page.wait_for_timeout(900)  # the window takes a moment to go
         ask(page, capture.SCROLL_TO, 0)
         tell(0.07, "Fotografiando su web…")
         session = context.new_cdp_session(page)

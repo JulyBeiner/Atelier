@@ -118,20 +118,24 @@ PAGE_FACTS = "() => {" + ON_SCREEN + """
 }"""
 
 # A cookie notice can lie on top of the menu button. Say yes to it, as most visitors do.
+# A website can show two notices at once, from two different tools: each one gets its yes, once.
 ACCEPT_COOKIES = r"""() => {
   const yes = /^(aceptar|acepto|permitir|entendido|de acuerdo|vale|ok|accept|allow|agree|i agree|got it)\b/i;
+  const answered = [];
   for (const el of document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]')) {
     const text = (el.innerText || el.value || '').trim();
     if (!text || text.length > 40 || !yes.test(text) || (el.checkVisibility && !el.checkVisibility())) continue;
+    if (answered.some((notice) => notice.contains(el))) continue;
     for (let box = el.parentElement, up = 0; box && up < 6; box = box.parentElement, up++) {
       const around = box.innerText || '';
       if (around.length < 1500 && /cookie/i.test(around + ' ' + box.id + ' ' + box.getAttribute('class'))) {
         el.click();
-        return true;
+        answered.push(box);
+        break;
       }
     }
   }
-  return false;
+  return answered.length > 0;
 }"""
 
 # On a phone the menu usually hides behind a button. This lists the menu links already in sight
