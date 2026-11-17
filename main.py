@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import automations
 import crm
 import inspiration
 from database import get_connection, init_db
@@ -26,6 +27,7 @@ Status = Literal["pending", "approved", "rejected", "done"]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    automations.init_tables()
     recover_interrupted()
     inspiration.recover_interrupted()
     yield
@@ -36,6 +38,8 @@ app = FastAPI(title="Atelier", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 # Everything under /api/crm lives in crm.py.
 app.include_router(crm.router)
+# The Automations department: its page and everything under /api/automations live in automations.py.
+app.include_router(automations.router)
 
 
 @app.middleware("http")

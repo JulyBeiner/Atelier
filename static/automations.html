@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automatizaciones | Atelier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<!-- The brand tokens, the buttons and the forms are the CRM's: one look for the whole panel. -->
+<link rel="stylesheet" href="/static/crm.css">
+<style>
+  /* Only what this page adds: the rehearsal phone, the steps towards my yes and the pretend diary. */
+  .service-line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+  .pill.draft { background: transparent; border-color: var(--line); color: var(--muted); }
+  .pill.ready { background: var(--peach); color: var(--soft); }
+  .pill.approved { background: var(--olive-deep); color: var(--cream); }
+
+  .rehearsal { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 32px 64px; align-items: start; }
+  @media (max-width: 900px) { .rehearsal { grid-template-columns: 1fr; } }
+
+  /* The phone. It wears my brand, not WhatsApp's: it is a rehearsal, and it should look like one. */
+  .phone { border: 1px solid var(--line); border-radius: 28px; background: #FFFFFF; overflow: hidden; }
+  .phone-top { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: var(--warm); border-bottom: 1px solid var(--line); }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 50%; background: var(--sage); color: #3F4429;
+    display: grid; place-items: center; font-family: var(--serif); font-size: 17px; flex: none;
+  }
+  .phone-name { font-weight: 600; line-height: 1.2; }
+  .phone-status { font-size: 12px; color: var(--muted); }
+  .talk { height: 440px; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 8px; background: var(--cream); }
+  .bubble { max-width: 84%; padding: 9px 13px 7px; border-radius: 16px; font-size: 14.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble.patient { align-self: flex-end; background: var(--peach); border-bottom-right-radius: 5px; }
+  .bubble.assistant, .bubble.reminder { align-self: flex-start; background: #FFFFFF; border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .bubble time { display: block; text-align: right; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .bubble .tag { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--olive-deep); margin-bottom: 3px; }
+  .chips { align-self: flex-start; display: flex; gap: 6px; flex-wrap: wrap; max-width: 92%; }
+  .chips button { background: #FFFFFF; color: var(--olive-deep); border-color: rgba(94, 100, 64, 0.4); padding: 6px 14px; font-size: 13.5px; }
+  .chips button:hover { background: var(--warm); border-color: var(--olive-deep); }
+  .team-note { align-self: flex-start; font-size: 12px; color: var(--muted); padding-left: 6px; }
+  .day-line { align-self: center; font-size: 12px; color: var(--muted); background: var(--warm); border-radius: 999px; padding: 3px 12px; margin: 8px 0 4px; }
+  .talk-empty { margin: auto; text-align: center; color: var(--muted); max-width: 30ch; }
+  .talk-empty .note { display: block; font-family: var(--hand); font-size: 24px; color: var(--olive-deep); transform: rotate(-2deg); margin-bottom: 6px; }
+  /* Which pretend patient is writing. Two, so I can see they never get the same slot. */
+  .who { display: flex; gap: 6px; margin-bottom: 10px; }
+  .who button[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #3F4429; }
+  .phone-write { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--warm); }
+  .phone-write input { border-radius: 999px; }
+  .under-phone { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center; margin-top: 14px; font-size: 14px; }
+  .under-phone .check { font-size: 14px; }
+  .linkish { background: none; border: 0; padding: 0; color: var(--olive-deep); font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 4px; }
+  .linkish:hover { background: none; color: var(--ink); }
+  .starters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .starters button { font-size: 13px; padding: 5px 13px; }
+
+  /* The steps towards my yes */
+  .steps-list { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 10px; }
+  .steps-list li { display: flex; gap: 12px; align-items: baseline; color: var(--soft); }
+  .steps-list .mark { flex: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid rgba(63, 68, 41, 0.45); position: relative; top: 4px; }
+  .steps-list li.done { color: var(--ink); }
+  .steps-list li.done .mark { background: var(--olive-deep); border-color: var(--olive-deep); }
+  .steps-list li.done .mark::after {
+    content: ""; position: absolute; left: 6px; top: 2.5px; width: 5px; height: 9px;
+    border: solid var(--cream); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .card .fine { margin: 14px 0 0; font-size: 13px; color: var(--soft); }
+  .after { margin-top: 28px; }
+  .after h3 { font-size: 20px; margin-bottom: 8px; }
+  .after ul { margin: 0; padding-left: 18px; color: var(--soft); }
+  .after li { margin-bottom: 4px; }
+
+  .days { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px 14px; align-items: center; }
+  .days label { margin: 0; font-size: 15px; color: var(--ink); }
+  .hint { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+  .diary { list-style: none; margin: 0; padding: 0; }
+  .diary li { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+  .diary li:first-child { border-top: 0; padding-top: 0; }
+  .diary .what { color: var(--muted); font-size: 13px; }
+  pre.words {
+    white-space: pre-wrap; font-family: var(--sans); font-size: 14px; line-height: 1.55; color: var(--soft);
+    background: var(--warm); border-radius: var(--radius); padding: 20px 22px; margin: 18px 0 0;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <div class="bar-left">
+      <a class="back" href="/" id="back">Volver al panel</a>
+    </div>
+    <div class="brand">
+      <span class="wordmark">Atelier</span>
+      <span class="by">by</span>
+      <img class="logo" src="/static/julbeiner-logo.svg" alt="julbeiner" width="111" height="30">
+    </div>
+  </div>
+
+  <div id="error" role="alert"></div>
+
+  <!-- The department: every service and where it stands -->
+  <main id="view-list" hidden>
+    <header class="opening">
+      <p class="whose">Departamento de Automatizaciones</p>
+      <h1>Un WhatsApp que <em>reserva solo</em>.</h1>
+      <p class="lede">Lo que prometen tus vídeos: contesta a cualquier hora, apunta la cita en la agenda de la clínica y manda un recordatorio el día antes. Aquí Atelier lo deja listo para cada clínica y tú lo ensayas. Nada habla con pacientes reales sin tu sí.</p>
+      <div class="stats">
+        <span class="stat"><b id="count-all">0</b> <span id="count-all-word">servicios</span></span>
+        <span class="stat"><b id="count-ready">0</b> esperan tu sí</span>
+        <span class="stat"><b id="count-approved">0</b> con tu sí</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="services-title">
+      <h2 id="services-title">Servicios</h2>
+      <div id="services"></div>
+    </section>
+
+    <section aria-labelledby="new-title">
+      <div class="card">
+        <h2 id="new-title">Preparar el servicio para una clínica</h2>
+        <p class="sub">Atelier empieza la ficha con lo que ya sabe de la clínica. Prepararlo y ensayarlo es gratis.</p>
+        <form id="new-form">
+          <div class="row">
+            <div>
+              <label for="new-clinic">Una clínica de tu CRM</label>
+              <select id="new-clinic"></select>
+            </div>
+            <div>
+              <label for="new-name">O una clínica inventada, para probar</label>
+              <input id="new-name" maxlength="120" placeholder="Clínica Aurora" autocomplete="off">
+            </div>
+          </div>
+          <p class="form-error" id="new-error" hidden></p>
+          <div class="form-actions"><button type="submit">Preparar el servicio</button></div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- One service: the rehearsal, the steps towards my yes, the card and the pretend diary -->
+  <main id="view-service" hidden>
+    <header class="opening">
+      <p class="whose">WhatsApp que contesta y reserva solo</p>
+      <h1 id="service-name"></h1>
+      <div class="service-line">
+        <span class="pill" id="service-state"></span>
+        <a id="service-clinic" hidden>Ver su ficha en el CRM</a>
+      </div>
+    </header>
+
+    <section aria-labelledby="rehearsal-title">
+      <h2 id="rehearsal-title">El ensayo</h2>
+      <p class="section-note">Escribe como escribiría una paciente. El asistente contesta con la ficha y la agenda de ensayo de abajo. Hay dos pacientes, cada una con su conversación y las dos con la misma agenda: lo que reserva una ya no se le ofrece a la otra. Todo pasa en tu ordenador: no sale ningún mensaje.</p>
+      <div class="rehearsal">
+        <div>
+          <div class="who" role="group" aria-label="Quién escribe">
+            <button type="button" class="quiet small" data-patient="1" aria-pressed="true">Paciente 1</button>
+            <button type="button" class="quiet small" data-patient="2" aria-pressed="false">Paciente 2</button>
+          </div>
+          <div class="phone">
+            <div class="phone-top">
+              <span class="avatar" id="avatar" aria-hidden="true"></span>
+              <div>
+                <div class="phone-name" id="phone-name"></div>
+                <div class="phone-status">asistente · ensayo · hora de Madrid</div>
+              </div>
+            </div>
+            <div class="talk" id="talk" aria-live="polite"></div>
+            <form class="phone-write" id="say-form">
+              <input id="say-text" maxlength="600" placeholder="Escribe un mensaje" autocomplete="off" aria-label="Mensaje de la paciente">
+              <button type="submit" class="quiet" id="say-send">Enviar</button>
+            </form>
+          </div>
+          <div class="starters" id="starters"></div>
+          <div class="under-phone">
+            <label class="check"><input type="checkbox" id="at-night">Escribe de noche, a las 23:14</label>
+            <button type="button" class="linkish" id="show-reminder">Ver el recordatorio del día antes</button>
+            <button type="button" class="linkish" id="restart">Empezar de nuevo</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>Antes de tu sí</h2>
+            <p class="sub" id="steps-sub"></p>
+            <ul class="steps-list" id="steps"></ul>
+            <div class="form-actions">
+              <button type="button" id="approve">Dar mi sí</button>
+              <button type="button" class="linkish" id="unapprove" hidden>Retirar mi sí</button>
+            </div>
+            <p class="fine" id="approve-note"></p>
+          </div>
+          <div class="after">
+            <h3>Después de tu sí, con la clínica</h3>
+            <ul>
+              <li>Su número de WhatsApp, dado de alta en la API de Meta.</li>
+              <li>Su agenda, conectada.</li>
+              <li>El texto del recordatorio, aprobado por Meta.</li>
+              <li>El flujo de n8n, copiado de la plantilla con esta ficha.</li>
+            </ul>
+            <p class="hint">Estos pasos cuestan dinero o necesitan a la clínica. Atelier te pregunta antes de cada uno.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="card-title">
+      <div class="sheet">
+        <div>
+          <h2 id="card-title">La ficha</h2>
+          <p class="section-note">Lo que el asistente sabe de la clínica. Si la cambias, el ensayo empieza de nuevo y tu sí se retira: lo que apruebas es lo que has probado.</p>
+          <form id="card-form">
+            <div>
+              <label for="treatments">Tratamientos, uno por línea. Detrás de cada uno, los minutos que dura la cita.</label>
+              <textarea id="treatments" rows="7" spellcheck="false"></textarea>
+              <p class="hint">Así: <b>ácido hialurónico · 30</b>. Escríbelos como los diría una paciente.</p>
+            </div>
+            <div>
+              <label>Horario. Deja vacío el día que cierra.</label>
+              <div class="days" id="days"></div>
+              <p class="hint">Así: <b>10:00-14:00, 16:00-20:00</b>.</p>
+            </div>
+            <div class="row">
+              <div>
+                <label for="notice">Antelación mínima de una cita, en horas</label>
+                <input id="notice" type="number" min="0" max="72" step="1">
+              </div>
+              <div>
+                <label for="reminder-time">Hora del recordatorio, el día antes</label>
+                <input id="reminder-time" type="time">
+              </div>
+            </div>
+            <p class="form-error" id="card-error" hidden></p>
+            <div class="form-actions"><button type="submit" class="quiet">Guardar la ficha</button></div>
+          </form>
+        </div>
+
+        <div>
+          <h2>La agenda de ensayo</h2>
+          <p class="section-note">Una agenda de mentira. Ocupa un hueco a mano y verás que el asistente deja de ofrecerlo: así no hay citas dobles.</p>
+          <ul class="diary" id="diary"></ul>
+          <details>
+            <summary>Ocupar un hueco a mano</summary>
+            <form id="hand-form">
+              <div class="row">
+                <div>
+                  <label for="hand-when">Día y hora</label>
+                  <input id="hand-when" type="datetime-local" step="1800" required>
+                </div>
+                <div>
+                  <label for="hand-minutes">Minutos</label>
+                  <input id="hand-minutes" type="number" min="10" max="240" step="5" value="30" required>
+                </div>
+              </div>
+              <p class="form-error" id="hand-error" hidden></p>
+              <div class="form-actions"><button type="submit" class="quiet">Ocupar el hueco</button></div>
+            </form>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="n8n-title">
+      <h2 id="n8n-title">Lo que irá a n8n</h2>
+      <p class="section-note">El ensayo usa reglas sencillas para entender a la paciente. En n8n eso lo hace un modelo, con estas instrucciones: las de la plantilla, con esta ficha dentro. La agenda sigue las mismas reglas que aquí: los huecos salen siempre de la agenda, nunca del modelo.</p>
+      <details>
+        <summary>Las instrucciones del asistente</summary>
+        <pre class="words" id="instructions"></pre>
+      </details>
+      <details>
+        <summary>El recordatorio del día antes</summary>
+        <pre class="words" id="reminder-example"></pre>
+      </details>
+      <details>
+        <summary>La ficha, tal como entra en n8n</summary>
+        <pre class="words" id="n8n-card"></pre>
+        <p class="hint" id="n8n-note"></p>
+      </details>
+    </section>
+
+    <section>
+      <button type="button" class="danger" id="delete">Borrar este servicio</button>
+    </section>
+  </main>
+
+</div>
+<div id="flash" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const DAYS = [["mon", "Lunes"], ["tue", "Martes"], ["wed", "Miércoles"], ["thu", "Jueves"], ["fri", "Viernes"], ["sat", "Sábado"], ["sun", "Domingo"]];
+const STATES = { draft: "En preparación", ready: "Espera tu sí", approved: "Con tu sí" };
+const NOT_INITIALS = ["clinica", "clinicas", "clinic", "centro", "instituto", "medicina", "estetica", "de", "del", "la", "el", "y", "dr", "dra"];
+
+let service = null;  // the service on screen, as /api/automations/services/{id} gives it
+let patient = 1;     // which pretend patient's phone is showing: 1 or 2
+
+// Build elements with textContent only, so nothing typed here is ever run as HTML.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+async function api(path, method, body) {
+  const options = { method: method || "GET" };
+  if (body !== undefined) {
+    options.headers = { "Content-Type": "application/json" };
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    const answer = await response.json().catch(() => ({}));
+    throw new Error(typeof answer.detail === "string" ? answer.detail : "Revisa lo que has escrito (error " + response.status + ").");
+  }
+  return response.json();
+}
+
+function showError(message) {
+  $("error").textContent = message || "";
+  $("error").style.display = message ? "block" : "none";
+}
+
+function formError(id, message) {
+  $(id).textContent = message || "";
+  $(id).hidden = !message;
+}
+
+let flashTimer = null;
+function flash(message) {
+  $("flash").textContent = message;
+  $("flash").classList.add("on");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => $("flash").classList.remove("on"), 2600);
+}
+
+function initials(name) {
+  const plain = (word) => word.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const words = name.split(/\s+/).filter((word) => word && !NOT_INITIALS.includes(plain(word)));
+  return (words.length ? words : [name]).slice(0, 2).map((word) => word[0].toUpperCase()).join("");
+}
+
+// ---------- The department ----------
+
+async function showList() {
+  const data = await api("/api/automations/services");
+  service = null;
+  document.title = "Automatizaciones | Atelier";
+  $("back").textContent = "Volver al panel";
+  $("back").href = "/";
+  $("count-all").textContent = data.services.length;
+  $("count-all-word").textContent = data.services.length === 1 ? "servicio" : "servicios";
+  $("count-ready").textContent = data.services.filter((one) => one.state === "ready").length;
+  $("count-approved").textContent = data.services.filter((one) => one.state === "approved").length;
+
+  const box = $("services");
+  box.replaceChildren();
+  if (!data.services.length) {
+    const empty = el("div", "empty-block");
+    empty.append(el("span", "note", "todavía ninguno"), el("p", "", "Prepara el primero aquí abajo. Con una clínica inventada puedes probarlo todo sin tocar tu CRM."));
+    box.append(empty);
+  } else {
+    const list = el("ul", "todo-list");
+    for (const one of data.services) {
+      const item = el("li", "todo");
+      const main = el("div");
+      const name = el("a", "todo-name", one.clinic_name);
+      name.href = "#s-" + one.id;
+      const done = one.checklist.filter((step) => step.done).length;
+      const next = one.checklist.find((step) => !step.done);
+      main.append(name, el("div", "todo-step", next ? "Falta: " + next.label.charAt(0).toLowerCase() + next.label.slice(1) : "Todo listo, con tu sí."));
+      const meta = el("div", "todo-meta");
+      meta.append(el("span", "pill " + one.state, STATES[one.state]), el("span", "", done + " de " + one.checklist.length + " pasos"));
+      if (one.invented) meta.append(el("span", "", "clínica inventada"));
+      main.append(meta);
+      const side = el("div", "todo-side");
+      const open = el("a", "back", "Abrir");
+      open.href = "#s-" + one.id;
+      side.append(open);
+      item.append(main, side);
+      list.append(item);
+    }
+    box.append(list);
+  }
+
+  const select = $("new-clinic");
+  select.replaceChildren(new Option(data.clinics.length ? "Elige una clínica…" : "No hay clínicas sin servicio", ""));
+  for (const clinic of data.clinics) select.append(new Option(clinic.name, clinic.id));
+  select.disabled = !data.clinics.length;
+  $("view-service").hidden = true;
+  $("view-list").hidden = false;
+}
+
+$("new-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  formError("new-error", "");
+  const clinicId = $("new-clinic").value;
+  const name = $("new-name").value.trim();
+  if (!clinicId && !name) return formError("new-error", "Elige una clínica o escribe un nombre inventado.");
+  try {
+    const made = await api("/api/automations/services", "POST", clinicId ? { clinic_id: Number(clinicId) } : { name });
+    $("new-name").value = "";
+    location.hash = "#s-" + made.id;
+  } catch (problem) {
+    formError("new-error", problem.message);
+  }
+});
+
+// ---------- One service ----------
+
+// The conversation of the patient whose phone is showing.
+function herMessages() {
+  return service.messages.filter((message) => message.patient === patient);
+}
+
+function drawTalk() {
+  const talk = $("talk");
+  talk.replaceChildren();
+  for (const button of document.querySelectorAll(".who button")) {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.patient) === patient));
+  }
+  const messages = herMessages();
+  if (!messages.length) {
+    const empty = el("div", "talk-empty");
+    empty.append(el("span", "note", patient === 1 ? "tú eres la paciente" : "ahora eres otra paciente"), document.createTextNode("Escribe el primer mensaje, o elige uno de los de abajo."));
+    talk.append(empty);
+  }
+  let day = null;
+  const last = messages.length - 1;
+  messages.forEach((message, index) => {
+    if (message.day !== day) {
+      const words = new Date(message.day + "T12:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+      if (day !== null || message.who === "reminder") talk.append(el("div", "day-line", (message.who === "reminder" ? "El día antes · " : "") + words));
+      day = message.day;
+    }
+    const bubble = el("div", "bubble " + message.who);
+    if (message.who === "reminder") bubble.append(el("span", "tag", "Recordatorio"));
+    bubble.append(document.createTextNode(message.text), el("time", "", message.time));
+    talk.append(bubble);
+    if (message.for_team) talk.append(el("div", "team-note", "↳ Aviso para el equipo de la clínica"));
+    // Only the newest slots can be tapped: older ones may no longer be on the table.
+    if (message.slots.length && index === last) {
+      const chips = el("div", "chips");
+      for (const slot of message.slots) {
+        const chip = el("button", "", slot.label);
+        chip.type = "button";
+        chip.addEventListener("click", () => say(slot.say));
+        chips.append(chip);
+      }
+      talk.append(chips);
+    }
+  });
+  talk.scrollTop = talk.scrollHeight;
+}
+
+function drawSteps() {
+  const steps = $("steps");
+  steps.replaceChildren();
+  for (const step of service.checklist) {
+    const item = el("li", step.done ? "done" : "");
+    const mark = el("span", "mark");
+    mark.setAttribute("aria-hidden", "true");
+    item.append(mark, el("span", "", step.label + (step.done ? " (hecho)" : "")));
+    steps.append(item);
+  }
+  const approved = service.state === "approved";
+  $("approve").hidden = approved;
+  $("approve").disabled = service.state !== "ready";
+  $("unapprove").hidden = !approved;
+  $("steps-sub").textContent = approved ? "Este servicio está como tú lo quieres."
+    : service.state === "ready" ? "Ya está ensayado. Solo falta que digas que sí."
+    : "Atelier lo deja listo; tú lo pruebas y decides.";
+  $("approve-note").textContent = approved
+    ? "Tu sí no enciende nada: dice que el servicio está bien así. Conectarlo a pacientes reales es otro paso, y Atelier te pregunta antes."
+    : "Tu sí no enciende nada ni envía mensajes. Dice que el servicio está bien así.";
+  $("service-state").className = "pill " + service.state;
+  $("service-state").textContent = STATES[service.state];
+}
+
+function drawDiary() {
+  const diary = $("diary");
+  diary.replaceChildren();
+  if (!service.bookings.length) {
+    diary.append(el("li", "empty", "Sin citas todavía. Reserva una en el ensayo."));
+    return;
+  }
+  for (const booking of service.bookings) {
+    const item = el("li");
+    const words = el("div");
+    words.append(el("div", "", booking.when.charAt(0).toUpperCase() + booking.when.slice(1)));
+    const what = [booking.treatment, booking.minutes + " min", booking.source === "hand" ? "ocupado a mano" : "reservada por la paciente " + (booking.patient || 1)];
+    if (booking.reminded) what.push("recordatorio visto");
+    words.append(el("div", "what", what.filter(Boolean).join(" · ")));
+    const remove = el("button", "quiet small", "Liberar");
+    remove.type = "button";
+    remove.addEventListener("click", () => act(() => api("/api/automations/bookings/" + booking.id, "DELETE")));
+    item.append(words, remove);
+    diary.append(item);
+  }
+}
+
+function drawCard() {
+  $("treatments").value = service.config.treatments.map((one) => one.name + " · " + one.minutes).join("\n");
+  const days = $("days");
+  days.replaceChildren();
+  for (const [key, name] of DAYS) {
+    const label = el("label", "", name);
+    label.htmlFor = "day-" + key;
+    const input = el("input");
+    input.id = "day-" + key;
+    input.value = service.hours_text[key];
+    input.placeholder = "cerrado";
+    input.autocomplete = "off";
+    days.append(label, input);
+  }
+  $("notice").value = service.config.notice_hours;
+  $("reminder-time").value = service.config.reminder_time;
+}
+
+function drawStarters() {
+  const box = $("starters");
+  box.replaceChildren();
+  if (herMessages().length) return;
+  const named = service.config.treatments.find((one) => !/valoraci/i.test(one.name)) || service.config.treatments[0];
+  const lines = ["Hola, ¿tenéis hueco esta semana para " + named.name + "?", "Hola, quería pedir cita", "¿Cuánto cuesta?"];
+  for (const line of lines) {
+    const button = el("button", "quiet small", line);
+    button.type = "button";
+    button.addEventListener("click", () => say(line));
+    box.append(button);
+  }
+}
+
+// Draw what changes with every message. The card's form is drawn only when the service opens or its
+// card is saved, so a message never wipes what I am typing in it.
+function draw() {
+  drawTalk();
+  drawSteps();
+  drawDiary();
+  drawStarters();
+  $("instructions").textContent = service.instructions;
+  $("reminder-example").textContent = service.reminder_example;
+  // The values of the «Ficha de la clínica» node in the clinic's copy, one per line, as n8n gets them.
+  const card = Object.entries(service.n8n_card).map(([field, value]) => field + ": " + value);
+  card.push("hora del recordatorio: " + service.config.reminder_time);
+  $("n8n-card").textContent = card.join("\n");
+  $("n8n-note").textContent = service.state === "approved"
+    ? "Con tu sí, Atelier puede crear la copia en tu n8n: pídeselo al chat de Automatizaciones. Queda en la carpeta «Atelier · Clínicas», sin publicar."
+    : "Cuando des tu sí, Atelier podrá crear con esto la copia de n8n de esta clínica, sin publicarla.";
+}
+
+async function showService(id) {
+  service = await api("/api/automations/services/" + id);
+  patient = 1;
+  document.title = service.clinic_name + " | Automatizaciones | Atelier";
+  $("back").textContent = "Todos los servicios";
+  $("back").href = "#";
+  $("service-name").textContent = service.clinic_name;
+  $("phone-name").textContent = service.clinic_name;
+  $("avatar").textContent = initials(service.clinic_name);
+  $("service-clinic").hidden = service.clinic_id === null;
+  if (service.clinic_id !== null) $("service-clinic").href = "/crm/clinics/" + service.clinic_id;
+  drawCard();
+  draw();
+  $("view-list").hidden = true;
+  $("view-service").hidden = false;
+}
+
+// Run something that answers with the whole service, and draw it.
+async function act(call, message) {
+  showError("");
+  try {
+    service = await call();
+    draw();
+    if (message) flash(message);
+    return true;
+  } catch (problem) {
+    showError(problem.message);
+    return false;
+  }
+}
+
+async function say(text) {
+  if (!text.trim() || $("say-send").disabled) return;
+  $("say-send").disabled = true;
+  const body = { text: text.trim(), patient };
+  if ($("at-night").checked) body.clock = "23:14";
+  const ok = await act(() => api("/api/automations/services/" + service.id + "/say", "POST", body));
+  $("say-send").disabled = false;
+  if (ok) $("say-text").value = "";
+  $("say-text").focus();
+}
+
+for (const button of document.querySelectorAll(".who button")) {
+  button.addEventListener("click", () => {
+    patient = Number(button.dataset.patient);
+    drawTalk();
+    drawStarters();
+    $("say-text").focus();
+  });
+}
+
+$("say-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  say($("say-text").value);
+});
+
+$("show-reminder").addEventListener("click", () =>
+  act(() => api("/api/automations/services/" + service.id + "/reminders", "POST")));
+
+$("restart").addEventListener("click", () =>
+  act(() => api("/api/automations/services/" + service.id + "/restart", "POST"), "Ensayo vacío"));
+
+$("approve").addEventListener("click", () =>
+  act(() => api("/api/automations/services/" + service.id + "/approve", "POST"), "Tu sí queda apuntado"));
+
+$("unapprove").addEventListener("click", () =>
+  act(() => api("/api/automations/services/" + service.id + "/unapprove", "POST"), "Sí retirado"));
+
+$("card-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  formError("card-error", "");
+  const treatments = [];
+  for (const line of $("treatments").value.split("\n")) {
+    if (!line.trim()) continue;
+    // "ácido hialurónico · 30": the name, a dot (or a comma, a dash or a tab) and the minutes.
+    const found = line.match(/^(.*?)(?:\s*[·,;\t]\s*|\s+-\s+)(\d{1,3})\s*(?:min\w*)?\s*$/);
+    treatments.push(found ? { name: found[1].trim(), minutes: Number(found[2]) } : { name: line.trim(), minutes: 30 });
+  }
+  if (!treatments.length) return formError("card-error", "Escribe al menos un tratamiento.");
+  const hours = {};
+  for (const [key] of DAYS) hours[key] = $("day-" + key).value;
+  const card = { treatments, hours, notice_hours: Number($("notice").value || 0), reminder_time: $("reminder-time").value || "10:00" };
+  try {
+    service = await api("/api/automations/services/" + service.id + "/card", "PUT", card);
+    drawCard();
+    draw();
+    flash("Ficha guardada");
+  } catch (problem) {
+    formError("card-error", problem.message);
+  }
+});
+
+$("hand-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  formError("hand-error", "");
+  try {
+    service = await api("/api/automations/services/" + service.id + "/bookings", "POST",
+      { starts_at: $("hand-when").value, minutes: Number($("hand-minutes").value) });
+    draw();
+    flash("Hueco ocupado");
+  } catch (problem) {
+    formError("hand-error", problem.message);
+  }
+});
+
+$("delete").addEventListener("click", async () => {
+  // The first click asks; the second one, within a few seconds, deletes.
+  const button = $("delete");
+  if (button.dataset.sure !== "yes") {
+    button.dataset.sure = "yes";
+    button.textContent = "Sí, borrar el servicio y su ensayo";
+    setTimeout(() => { button.dataset.sure = ""; button.textContent = "Borrar este servicio"; }, 5000);
+    return;
+  }
+  button.dataset.sure = "";
+  button.textContent = "Borrar este servicio";
+  try {
+    await api("/api/automations/services/" + service.id, "DELETE");
+    location.hash = "";
+  } catch (problem) {
+    showError(problem.message);
+  }
+});
+
+async function route() {
+  showError("");
+  const found = location.hash.match(/^#s-(\d+)$/);
+  try {
+    if (found) await showService(Number(found[1]));
+    else await showList();
+  } catch (problem) {
+    $("view-service").hidden = true;
+    if (found) await showList().catch(() => {});
+    showError(problem.message);
+  }
+  window.scrollTo(0, 0);
+}
+
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
