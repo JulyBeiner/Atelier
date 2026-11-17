@@ -697,6 +697,7 @@ function renderNumbers(data) {
 
 let videoLine = { running: false, done: 0, failed: 0, total: 0, waiting: [], now: null };
 let lineTimer = null;
+const IDLE_LOOK = 15000;  // how often to ask whether a video has started, while none is being made
 
 // The clinics whose video is missing: no video, an old one or one that failed. The server picks the same ones.
 const wantedVideos = () => clinics.filter((clinic) => clinic.video.wanted);
@@ -708,7 +709,12 @@ function renderLine() {
   $("video-all").textContent = "Hacer los vídeos que faltan (" + wanted + ", " + videoMinutes(wanted) + ")";
   $("video-line").hidden = !line.running;
   clearTimeout(lineTimer);
-  if (!line.running) return;
+  if (!line.running) {
+    // Nothing is being made, as far as this page knows. A video can still start from a clinic's card or
+    // from another window: ask now and then, only while I am looking at this page.
+    if (!document.hidden) lineTimer = setTimeout(followLine, IDLE_LOOK);
+    return;
+  }
 
   const finished = line.done + line.failed;
   const now = line.now;
@@ -735,7 +741,7 @@ async function followLine() {
   }
   const line = videoLine;
   const moved = line.done + line.failed !== before.done + before.failed
-    || (line.now && line.now.clinic_id) !== (before.now && before.now.clinic_id) || !line.running;
+    || (line.now && line.now.clinic_id) !== (before.now && before.now.clinic_id) || line.running !== before.running;
   if (moved) {
     if (before.running && !line.running) {
       flash("Vídeos hechos: " + line.done + " de " + line.total + "."
@@ -831,6 +837,12 @@ async function refresh() {
   } catch (error) { showError("No se pudo cargar el CRM: " + error.message); }
   checkImport();
 }
+
+// Back on this page after being somewhere else: load everything again instead of waiting for the next turn.
+// While videos are being made the page is already following them.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && !videoLine.running) refresh();
+});
 
 window.addEventListener("hashchange", showView);
 showView();
