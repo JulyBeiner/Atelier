@@ -41,6 +41,9 @@
   .day-line { align-self: center; font-size: 12px; color: var(--muted); background: var(--warm); border-radius: 999px; padding: 3px 12px; margin: 8px 0 4px; }
   .talk-empty { margin: auto; text-align: center; color: var(--muted); max-width: 30ch; }
   .talk-empty .note { display: block; font-family: var(--hand); font-size: 24px; color: var(--olive-deep); transform: rotate(-2deg); margin-bottom: 6px; }
+  /* Which pretend patient is writing. Two, so I can see they never get the same slot. */
+  .who { display: flex; gap: 6px; margin-bottom: 10px; }
+  .who button[aria-pressed="true"] { background: var(--sage); border-color: var(--sage); color: #3F4429; }
   .phone-write { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--warm); }
   .phone-write input { border-radius: 999px; }
   .under-phone { display: flex; gap: 8px 18px; flex-wrap: wrap; align-items: center; margin-top: 14px; font-size: 14px; }
@@ -148,9 +151,13 @@
 
     <section aria-labelledby="rehearsal-title">
       <h2 id="rehearsal-title">El ensayo</h2>
-      <p class="section-note">Escribe como escribiría una paciente. El asistente contesta con la ficha y la agenda de ensayo de abajo. Todo pasa en tu ordenador: no sale ningún mensaje.</p>
+      <p class="section-note">Escribe como escribiría una paciente. El asistente contesta con la ficha y la agenda de ensayo de abajo. Hay dos pacientes, cada una con su conversación y las dos con la misma agenda: lo que reserva una ya no se le ofrece a la otra. Todo pasa en tu ordenador: no sale ningún mensaje.</p>
       <div class="rehearsal">
         <div>
+          <div class="who" role="group" aria-label="Quién escribe">
+            <button type="button" class="quiet small" data-patient="1" aria-pressed="true">Paciente 1</button>
+            <button type="button" class="quiet small" data-patient="2" aria-pressed="false">Paciente 2</button>
+          </div>
           <div class="phone">
             <div class="phone-top">
               <span class="avatar" id="avatar" aria-hidden="true"></span>
@@ -287,6 +294,7 @@ const STATES = { draft: "En preparación", ready: "Espera tu sí", approved: "Co
 const NOT_INITIALS = ["clinica", "clinicas", "clinic", "centro", "instituto", "medicina", "estetica", "de", "del", "la", "el", "y", "dr", "dra"];
 
 let service = null;  // the service on screen, as /api/automations/services/{id} gives it
+let patient = 1;     // which pretend patient's phone is showing: 1 or 2
 
 // Build elements with textContent only, so nothing typed here is ever run as HTML.
 function el(tag, className, text) {
@@ -402,17 +410,26 @@ $("new-form").addEventListener("submit", async (event) => {
 
 // ---------- One service ----------
 
+// The conversation of the patient whose phone is showing.
+function herMessages() {
+  return service.messages.filter((message) => message.patient === patient);
+}
+
 function drawTalk() {
   const talk = $("talk");
   talk.replaceChildren();
-  if (!service.messages.length) {
+  for (const button of document.querySelectorAll(".who button")) {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.patient) === patient));
+  }
+  const messages = herMessages();
+  if (!messages.length) {
     const empty = el("div", "talk-empty");
-    empty.append(el("span", "note", "tú eres la paciente"), document.createTextNode("Escribe el primer mensaje, o elige uno de los de abajo."));
+    empty.append(el("span", "note", patient === 1 ? "tú eres la paciente" : "ahora eres otra paciente"), document.createTextNode("Escribe el primer mensaje, o elige uno de los de abajo."));
     talk.append(empty);
   }
   let day = null;
-  const last = service.messages.length - 1;
-  service.messages.forEach((message, index) => {
+  const last = messages.length - 1;
+  messages.forEach((message, index) => {
     if (message.day !== day) {
       const words = new Date(message.day + "T12:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
       if (day !== null || message.who === "reminder") talk.append(el("div", "day-line", (message.who === "reminder" ? "El día antes · " : "") + words));
@@ -473,7 +490,7 @@ function drawDiary() {
     const item = el("li");
     const words = el("div");
     words.append(el("div", "", booking.when.charAt(0).toUpperCase() + booking.when.slice(1)));
-    const what = [booking.treatment, booking.minutes + " min", booking.source === "hand" ? "ocupado a mano" : "reservada en el ensayo"];
+    const what = [booking.treatment, booking.minutes + " min", booking.source === "hand" ? "ocupado a mano" : "reservada por la paciente " + (booking.patient || 1)];
     if (booking.reminded) what.push("recordatorio visto");
     words.append(el("div", "what", what.filter(Boolean).join(" · ")));
     const remove = el("button", "quiet small", "Liberar");
@@ -505,7 +522,7 @@ function drawCard() {
 function drawStarters() {
   const box = $("starters");
   box.replaceChildren();
-  if (service.messages.length) return;
+  if (herMessages().length) return;
   const named = service.config.treatments.find((one) => !/valoraci/i.test(one.name)) || service.config.treatments[0];
   const lines = ["Hola, ¿tenéis hueco esta semana para " + named.name + "?", "Hola, quería pedir cita", "¿Cuánto cuesta?"];
   for (const line of lines) {
@@ -536,6 +553,7 @@ function draw() {
 
 async function showService(id) {
   service = await api("/api/automations/services/" + id);
+  patient = 1;
   document.title = service.clinic_name + " | Automatizaciones | Atelier";
   $("back").textContent = "Todos los servicios";
   $("back").href = "#";
@@ -567,12 +585,21 @@ async function act(call, message) {
 async function say(text) {
   if (!text.trim() || $("say-send").disabled) return;
   $("say-send").disabled = true;
-  const body = { text: text.trim() };
+  const body = { text: text.trim(), patient };
   if ($("at-night").checked) body.clock = "23:14";
   const ok = await act(() => api("/api/automations/services/" + service.id + "/say", "POST", body));
   $("say-send").disabled = false;
   if (ok) $("say-text").value = "";
   $("say-text").focus();
+}
+
+for (const button of document.querySelectorAll(".who button")) {
+  button.addEventListener("click", () => {
+    patient = Number(button.dataset.patient);
+    drawTalk();
+    drawStarters();
+    $("say-text").focus();
+  });
 }
 
 $("say-form").addEventListener("submit", (event) => {

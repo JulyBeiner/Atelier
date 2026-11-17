@@ -53,8 +53,8 @@ CREATE TABLE IF NOT EXISTS automation_services (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- The pretend diary of a rehearsal. source is 'chat' (the pretend patient booked it) or 'hand'
--- (I filled the slot myself, to see that the assistant no longer offers it).
+-- The pretend diary of a rehearsal. source is 'chat' (a pretend patient booked it: patient says which
+-- one) or 'hand' (I filled the slot myself, to see that the assistant no longer offers it).
 CREATE TABLE IF NOT EXISTS automation_bookings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     service_id INTEGER NOT NULL REFERENCES automation_services(id) ON DELETE CASCADE,
@@ -62,12 +62,14 @@ CREATE TABLE IF NOT EXISTS automation_bookings (
     minutes INTEGER NOT NULL,
     treatment TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL DEFAULT 'chat',
+    patient INTEGER,
     reminded INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- The rehearsal conversation. who is 'patient', 'assistant' or 'reminder'. slots holds the slots the
--- assistant offered in that message (JSON). for_team marks what the assistant left for a person.
+-- The rehearsal conversations, one per pretend patient (patient is her number). who is 'patient',
+-- 'assistant' or 'reminder'. slots holds the slots the assistant offered in that message (JSON).
+-- for_team marks what the assistant left for a person.
 CREATE TABLE IF NOT EXISTS automation_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     service_id INTEGER NOT NULL REFERENCES automation_services(id) ON DELETE CASCADE,
@@ -75,7 +77,8 @@ CREATE TABLE IF NOT EXISTS automation_messages (
     text TEXT NOT NULL,
     slots TEXT NOT NULL DEFAULT '[]',
     for_team INTEGER NOT NULL DEFAULT 0,
-    said_at TEXT NOT NULL
+    said_at TEXT NOT NULL,
+    patient INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS automation_bookings_by_service ON automation_bookings(service_id);
 CREATE INDEX IF NOT EXISTS automation_messages_by_service ON automation_messages(service_id);
@@ -93,6 +96,8 @@ FIRST_VISIT = "una primera valoración"
 STEP = timedelta(minutes=30)
 # How far ahead the assistant looks for a slot.
 LOOK_AHEAD_DAYS = 21
+# How many pretend patients a rehearsal has. Two are enough to see that they cannot get the same slot.
+PATIENTS = 2
 # From this hour on, a slot counts as "in the afternoon".
 AFTERNOON = time(15, 0)
 
@@ -127,6 +132,7 @@ class NewService(BaseModel):
 class Said(BaseModel):
     text: str = Field(min_length=1, max_length=600)
     clock: str = Field(default="", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")  # pretend she writes at this time today
+    patient: int = Field(default=1, ge=1, le=PATIENTS)  # which pretend patient is writing
 
 
 class HandBooking(BaseModel):
@@ -138,6 +144,14 @@ class HandBooking(BaseModel):
 def init_tables() -> None:
     with get_connection() as connection:
         connection.executescript(SCHEMA)
+        # Tables made before the rehearsal had two patients: everything in them was the first patient's.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(automation_messages)")}
+        if "patient" not in columns:
+            connection.execute("ALTER TABLE automation_messages ADD COLUMN patient INTEGER NOT NULL DEFAULT 1")
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(automation_bookings)")}
+        if "patient" not in columns:
+            connection.execute("ALTER TABLE automation_bookings ADD COLUMN patient INTEGER")
+            connection.execute("UPDATE automation_bookings SET patient = 1 WHERE source = 'chat'")
 
 
 # ---------- Small helpers with words and dates ----------
@@ -422,11 +436,12 @@ def choice_in(text: str, offered: list[datetime], now: datetime) -> list[datetim
 class Turn:
     """One turn of the assistant: what it says back, and how the conversation stands afterwards."""
 
-    def __init__(self, connection, service: dict, now: datetime):
+    def __init__(self, connection, service: dict, now: datetime, patient: int = 1):
         self.connection = connection
         self.service = service
         self.config = service["config"]
-        self.state = service["chat"]
+        self.patient = patient
+        self.state = service["chat"].setdefault(str(patient), {})  # each patient has her own conversation
         self.now = now
         self.clinic = service["clinic_name"]
         self.replies: list[dict] = []
@@ -443,10 +458,11 @@ class Turn:
         return next((entry for entry in self.config["treatments"] if entry["name"] == name), None)
 
     def my_booking(self):
-        """The pretend patient's next appointment, if she has one."""
+        """This patient's next appointment, if she has one. She never sees the other patient's."""
         return self.connection.execute(
-            "SELECT * FROM automation_bookings WHERE service_id = ? AND source = 'chat' AND starts_at >= ?"
-            " ORDER BY starts_at LIMIT 1", (self.service["id"], self.now.isoformat(timespec="minutes"))).fetchone()
+            "SELECT * FROM automation_bookings WHERE service_id = ? AND source = 'chat' AND patient = ?"
+            " AND starts_at >= ? ORDER BY starts_at LIMIT 1",
+            (self.service["id"], self.patient, self.now.isoformat(timespec="minutes"))).fetchone()
 
     def offer(self, wish: dict, after: datetime | None = None, without_days: set[int] = frozenset(),
               opening: str = "") -> None:
@@ -485,9 +501,10 @@ class Turn:
         if moving:
             self.connection.execute("DELETE FROM automation_bookings WHERE id = ?", (moving,))
         self.connection.execute(
-            "INSERT INTO automation_bookings (service_id, starts_at, minutes, treatment, source)"
-            " VALUES (?, ?, ?, ?, 'chat')",
-            (self.service["id"], slot.isoformat(timespec="minutes"), treatment["minutes"], treatment["name"]))
+            "INSERT INTO automation_bookings (service_id, starts_at, minutes, treatment, source, patient)"
+            " VALUES (?, ?, ?, ?, 'chat', ?)",
+            (self.service["id"], slot.isoformat(timespec="minutes"), treatment["minutes"], treatment["name"],
+             self.patient))
         days = (slot.date() - self.now.date()).days
         done = "Hecho: he cambiado tu cita. Te esperamos" if moving else "Hecho: te esperamos"
         text = f"{done} {spoken(slot, self.now)}."
@@ -686,6 +703,8 @@ def as_service(row) -> dict:
     service = dict(row)
     service["config"] = json.loads(service["config"])
     service["chat"] = json.loads(service["chat"])
+    if any(not key.isdigit() for key in service["chat"]):
+        service["chat"] = {"1": service["chat"]}  # saved when there was one patient: it was the first one's
     service["clinic_name"] = service.pop("crm_name") or service["name"]
     service["invented"] = service["clinic_id"] is None
     service["checklist"] = checklist(service)
@@ -843,7 +862,8 @@ def whole(connection, service: dict) -> dict:
         said_at = datetime.fromisoformat(row["said_at"])
         slots = [datetime.fromisoformat(slot) for slot in json.loads(row["slots"])]
         service["messages"].append({
-            "id": row["id"], "who": row["who"], "text": row["text"], "for_team": bool(row["for_team"]),
+            "id": row["id"], "who": row["who"], "patient": row["patient"], "text": row["text"],
+            "for_team": bool(row["for_team"]),
             "time": f"{said_at:%H:%M}", "day": said_at.date().isoformat(),
             "slots": [{"label": short(slot, said_at),
                        "say": f"{spoken(slot, said_at)[0].upper()}{spoken(slot, said_at)[1:]}, por favor"}
@@ -851,7 +871,7 @@ def whole(connection, service: dict) -> dict:
         })
     service["bookings"] = [
         {"id": row["id"], "starts_at": row["starts_at"], "minutes": row["minutes"], "treatment": row["treatment"],
-         "source": row["source"], "reminded": bool(row["reminded"]),
+         "source": row["source"], "patient": row["patient"], "reminded": bool(row["reminded"]),
          "when": spoken(datetime.fromisoformat(row["starts_at"]), now)}
         for row in bookings]
     service["instructions"] = instructions(service)
@@ -862,11 +882,12 @@ def whole(connection, service: dict) -> dict:
 
 
 def add_message(connection, service_id: int, who: str, text: str, said_at: datetime,
-                slots: list[datetime] | None = None, for_team: bool = False) -> None:
+                slots: list[datetime] | None = None, for_team: bool = False, patient: int = 1) -> None:
     connection.execute(
-        "INSERT INTO automation_messages (service_id, who, text, slots, for_team, said_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO automation_messages (service_id, who, text, slots, for_team, said_at, patient)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
         (service_id, who, text, json.dumps([slot.isoformat(timespec="minutes") for slot in slots or []]),
-         int(for_team), said_at.isoformat(timespec="seconds")))
+         int(for_team), said_at.isoformat(timespec="seconds"), patient))
 
 
 # ---------- The page and its API ----------
@@ -953,17 +974,22 @@ def save_card(service_id: int, card: Card):
 
 @router.post("/api/automations/services/{service_id}/say")
 def say(service_id: int, said: Said):
-    """The pretend patient writes, and the assistant answers. Nothing leaves this computer."""
+    """A pretend patient writes, and the assistant answers her. Nothing leaves this computer.
+
+    There are two patients, each with her own conversation and one shared pretend diary: what one books,
+    the other is no longer offered.
+    """
     now = clinic_now().replace(second=0, microsecond=0)
     if said.clock:
         now = datetime.combine(now.date(), time.fromisoformat(said.clock))
     with get_connection() as connection:
         service = fetch_service(connection, service_id)
-        add_message(connection, service_id, "patient", said.text.strip(), now)
-        turn = Turn(connection, service, now)
+        add_message(connection, service_id, "patient", said.text.strip(), now, patient=said.patient)
+        turn = Turn(connection, service, now, said.patient)
         turn.answer(said.text)
         for reply in turn.replies:
-            add_message(connection, service_id, "assistant", reply["text"], now, reply["slots"], reply["for_team"])
+            add_message(connection, service_id, "assistant", reply["text"], now, reply["slots"], reply["for_team"],
+                        patient=said.patient)
         changes = {"tested_at": now.isoformat(timespec="seconds")} if turn.booked and not service["tested_at"] else {}
         save(connection, service, **changes)
         return whole(connection, fetch_service(connection, service_id))
@@ -986,7 +1012,8 @@ def show_reminders(service_id: int):
             sent = at_time(starts_at.date() - timedelta(days=1), service["config"]["reminder_time"])
             if sent <= now:
                 continue  # booked too late for its reminder: the day before has already gone by
-            add_message(connection, service_id, "reminder", reminder_text(service, starts_at), sent)
+            add_message(connection, service_id, "reminder", reminder_text(service, starts_at), sent,
+                        patient=row["patient"] or 1)
             connection.execute("UPDATE automation_bookings SET reminded = 1 WHERE id = ?", (row["id"],))
             sent_any = True
         if not sent_any:
