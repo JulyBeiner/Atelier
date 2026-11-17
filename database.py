@@ -162,6 +162,7 @@ CREATE INDEX IF NOT EXISTS clinic_people_by_clinic ON clinic_people(clinic_id);
 # existing table as it is, so each of these is added once with ALTER TABLE.
 # website_check says how I know a clinic's website is really theirs; web_scan keeps what was read on it (JSON).
 # xray_scan keeps the quick X-ray's own measurements (JSON): when it was taken and Google's speed test.
+# client_id is the client of the panel a won clinic became: empty while it is only a clinic of the CRM.
 NEW_COLUMNS = {
     "clinics": {
         "tiktok": "TEXT NOT NULL DEFAULT ''",
@@ -172,6 +173,7 @@ NEW_COLUMNS = {
         "website_check": "TEXT NOT NULL DEFAULT ''",
         "web_scan": "TEXT NOT NULL DEFAULT '{}'",
         "xray_scan": "TEXT NOT NULL DEFAULT '{}'",
+        "client_id": "INTEGER REFERENCES clients(id)",
     },
 }
 

@@ -18,6 +18,8 @@
       <nav class="tabs" aria-label="Partes del CRM">
         <a href="/crm#hoy">Hoy</a>
         <a href="/crm#clinicas">Clínicas</a>
+        <a href="/crm#tablero">Tablero</a>
+        <a href="/crm#numeros">Números</a>
       </nav>
     </div>
     <div class="brand">
@@ -55,6 +57,12 @@
         <button type="submit" class="quiet small" id="reason-save">Guardar</button>
         <button type="button" class="linkish" id="reason-cancel">Cancelar</button>
       </form>
+      <!-- A won clinic passes to the panel, where the agents work for my clients. -->
+      <div class="won" id="won" hidden>
+        <p id="won-say"></p>
+        <button type="button" class="quiet small" id="won-button">Pasarla al panel</button>
+        <a id="won-link" href="/" hidden>Abrir el panel</a>
+      </div>
       <div class="stop-note" id="stop-note" hidden>
         <p>Esta clínica está marcada como «No contactar»: no sale en «Hoy» y no tiene seguimientos.</p>
       </div>
@@ -285,6 +293,13 @@ function renderPath() {
     ? "Está en «No interesada»" + (clinic.lost_reason ? ": " + clinic.lost_reason : "") : "No interesada";
   $("to-no").disabled = clinic.stage === "not_interested";
   $("stop-button").textContent = clinic.do_not_contact ? "Quitar «No contactar»" : "No contactar";
+  // Won: it can pass to the panel. Once there, the block only says so and takes me to it.
+  $("won").hidden = clinic.stage !== "client" && !clinic.client;
+  $("won-say").textContent = clinic.client
+    ? "Está en el panel como cliente: los agentes ya pueden trabajar para ella."
+    : "Ya es cliente. Pásala al panel para que los agentes trabajen para ella: se lleva su nombre, su web y unas notas. Es gratis.";
+  $("won-button").hidden = Boolean(clinic.client);
+  $("won-link").hidden = !clinic.client;
   $("stop-note").hidden = !clinic.do_not_contact;
 }
 
@@ -814,6 +829,15 @@ $("reason-form").addEventListener("submit", async (event) => {
   $("reason-form").hidden = true;
   await changeStage(pendingStage, $("reason").value);
   if (pendingStage === "later") flash("Ponle un día en «Próximo paso» para volver a escribirle.");
+});
+
+$("won-button").addEventListener("click", async () => {
+  $("won-button").disabled = true;
+  await act(async () => {
+    const result = await send("POST", "/api/crm/clinics/" + clinicId + "/client");
+    flash(result.made ? clinic.name + " ya está en el panel." : clinic.name + " ya estaba en el panel: la he unido a su cliente.");
+  }, load);
+  $("won-button").disabled = false;
 });
 
 $("stop-button").addEventListener("click", () => act(

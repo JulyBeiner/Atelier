@@ -427,6 +427,12 @@ function clientItem(client, reports, running) {
   const lastDone = mine.find((report) => report.status === "done" && report.overall_score !== null);
   if (lastDone) side.append(reportLink(lastDone.id, lastDone.overall_score + " de 100", ""));
   side.append(inspirationLink(client.id, "Inspiración", ""));
+  if (client.clinic_id) {
+    // Won in the CRM: its card keeps the people, the history and the X-ray.
+    const card = el("a", "", "Ficha del CRM");
+    card.href = "/crm/clinics/" + client.clinic_id;
+    side.append(card);
+  }
   if (/^https?:\/\//i.test(client.website)) {
     const link = el("a", "", client.website.replace(/^https?:\/\//i, ""));
     link.href = client.website;

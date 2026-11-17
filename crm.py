@@ -225,6 +225,31 @@ def fetch_person(connection, person_id: int) -> dict:
     return as_person(row)
 
 
+def panel_client(connection, clinic: dict) -> dict | None:
+    """The client of the panel this clinic became, or None while it is only a clinic of the CRM."""
+    if not clinic.get("client_id"):
+        return None
+    row = connection.execute("SELECT id, name, website FROM clients WHERE id = ?", (clinic["client_id"],)).fetchone()
+    return dict(row) if row else None
+
+
+def client_notes(clinic: dict, people: list[dict]) -> str:
+    """What the panel should know about a new client from the start: where it is, what it does, its
+    biggest hole and who decides. It stays in the local database, like everything about a clinic."""
+    place = ", ".join(part for part in (clinic["area"], clinic["city"]) if part)
+    lines = ["Viene del CRM" + (": " + place if place else "") + "."]
+    if clinic["treatments"]:
+        lines.append("Tratamientos: " + clinic["treatments"].rstrip(".") + ".")
+    hole = (clinic.get("xray") or {}).get("hole")
+    if hole:
+        lines.append("Su mayor agujero en la radiografía: " + hole["label"].lower() + ".")
+    decides = [person for person in people if person["decides"]]
+    if decides:
+        lines.append("Decide: " + ", ".join(
+            person["name"] + (" (" + person["role"] + ")" if person["role"] else "") for person in decides) + ".")
+    return " ".join(lines)[:2000]
+
+
 def touch(connection, clinic_id: int) -> None:
     connection.execute("UPDATE clinics SET updated_at = datetime('now') WHERE id = ?", (clinic_id,))
 
@@ -279,10 +304,11 @@ def create_clinic(new_clinic: ClinicCreate):
 
 @router.get("/clinics/{clinic_id}")
 def get_clinic(clinic_id: int):
-    """One clinic with its people, its history (newest first), the drafts of the message to write to it
-    and the state of its video."""
+    """One clinic with its people, its history (newest first), the drafts of the message to write to it,
+    the state of its video and, once it is won and passed to the panel, its client there."""
     with get_connection() as connection:
         clinic = fetch_clinic(connection, clinic_id)
+        client = panel_client(connection, clinic)
         people = connection.execute(
             "SELECT * FROM clinic_people WHERE clinic_id = ? ORDER BY decides DESC, name COLLATE NOCASE",
             (clinic_id,),
@@ -297,7 +323,7 @@ def get_clinic(clinic_id: int):
     history = [dict(row) for row in history]
     # The first message, written around its biggest hole. Atelier never sends it: I copy it.
     return clinic | {"people": people, "history": history, "drafts": outreach.drafts(clinic, people, history),
-                     "video": video.status(clinic)}
+                     "video": video.status(clinic), "client": client}
 
 
 @router.patch("/clinics/{clinic_id}")
@@ -318,7 +344,10 @@ def update_clinic(clinic_id: int, changes: ClinicUpdate):
 
 @router.delete("/clinics/{clinic_id}")
 def delete_clinic(clinic_id: int):
-    """Erase a clinic with its people, its history and its video. For when someone asks me to delete their data."""
+    """Erase a clinic with its people, its history and its video. For when someone asks me to delete their data.
+
+    If it had passed to the panel, its client stays there with the work the agents did for it.
+    """
     with get_connection() as connection:
         fetch_clinic(connection, clinic_id)
         connection.execute("DELETE FROM clinics WHERE id = ?", (clinic_id,))
@@ -346,6 +375,42 @@ def change_stage(clinic_id: int, change: StageChange):
             # Nothing left to do with a clinic that said no.
             clear_next_step(connection, clinic_id)
         return fetch_clinic(connection, clinic_id)
+
+
+@router.post("/clinics/{clinic_id}/client", status_code=201)
+def make_client(clinic_id: int):
+    """Pass a won clinic to the panel as a client, so the agents can work for it. Free: no API.
+
+    Only a clinic in the stage "Cliente" can pass. The client takes its name, its website and a few notes.
+    It is done once: asking again gives back the same client. A client of the panel with the same name
+    that belongs to no clinic is taken as this one, so nobody is in the panel twice.
+    """
+    with get_connection() as connection:
+        clinic = fetch_clinic(connection, clinic_id)
+        client = panel_client(connection, clinic)
+        if client:
+            return {"client": client, "made": False}
+        if clinic["stage"] != "client":
+            raise HTTPException(status_code=409, detail="Primero pasa la clínica a «Cliente»: al panel solo van las ganadas.")
+        same = connection.execute(
+            "SELECT id FROM clients WHERE name = ? COLLATE NOCASE"
+            " AND id NOT IN (SELECT client_id FROM clinics WHERE client_id IS NOT NULL) ORDER BY id LIMIT 1",
+            (clinic["name"],)).fetchone()
+        if same:
+            client_id = same["id"]
+        else:
+            people = [as_person(row) for row in connection.execute(
+                "SELECT * FROM clinic_people WHERE clinic_id = ? ORDER BY name COLLATE NOCASE", (clinic_id,))]
+            client_id = insert(connection, "clients", {
+                "name": clinic["name"], "website": clinic["website"], "notes": client_notes(clinic, people)})
+        update(connection, "clinics", clinic_id, {"client_id": client_id})
+        insert(connection, "clinic_history", {
+            "clinic_id": clinic_id, "happened_on": date.today().isoformat(), "kind": "note",
+            "summary": "La pasé al panel como cliente." if not same
+                       else "La uní a su cliente del panel, que ya existía con el mismo nombre.",
+        })
+        touch(connection, clinic_id)
+        return {"client": panel_client(connection, fetch_clinic(connection, clinic_id)), "made": not same}
 
 
 @router.post("/clinics/{clinic_id}/next-step")

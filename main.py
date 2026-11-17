@@ -150,7 +150,10 @@ def clinic_page(clinic_id: int):
 @app.get("/api/clients")
 def list_clients():
     with get_connection() as connection:
-        rows = connection.execute("SELECT * FROM clients ORDER BY name").fetchall()
+        # clinic_id: the clinic of the CRM a client came from, when it was won there.
+        rows = connection.execute(
+            "SELECT clients.*, (SELECT MIN(id) FROM clinics WHERE clinics.client_id = clients.id) AS clinic_id"
+            " FROM clients ORDER BY name").fetchall()
     return [dict(row) for row in rows]
 
 

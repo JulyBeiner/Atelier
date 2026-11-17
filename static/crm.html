@@ -604,6 +604,8 @@ function boardChip(clinic) {
     const late = clinic.next_step_on < today;
     chip.append(el("div", "sub", clinic.next_step),
       el("span", "when sub" + (late ? " late" : ""), sayDay(clinic.next_step_on, today)));
+  } else if (clinic.stage === "client") {
+    chip.append(el("div", "sub", clinic.client_id ? "En el panel" : "Falta pasarla al panel"));
   } else if (clinic.area) {
     chip.append(el("div", "sub", clinic.area));
   }
