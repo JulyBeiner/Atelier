@@ -44,6 +44,10 @@ The candidates wait in the panel. I mark the ones that inspire me and what I lik
 
 Atelier never sends a message. The links only open WhatsApp, the phone or the mail on my computer, and I write.
 
+**The Automations agent, first part.** For a clinic with no WhatsApp or no online booking, Atelier prepares the service my video promises: a WhatsApp that answers and books by itself, at any hour, with a reminder the day before. Each clinic gets a card (its treatments, how long each visit takes, its opening hours) and a rehearsal: I write as a patient would, the assistant offers three free slots, books the one I pick in a pretend diary and shows the reminder. The rehearsal has two pretend patients (the buttons above the phone), so I can see that the assistant never gives the same slot twice. Prices or medical questions go to the clinic's team. It is free and runs on my computer: no message is sent and the Claude API is not used. A service waits for my yes, and my yes switches nothing on. The page is at http://127.0.0.1:8000/automations.
+
+**Each clinic's copy for n8n.** The instructions on a service's page are the n8n template's own, with the clinic's card in them. Once I approve a service, `GET /api/automations/services/{id}/n8n` gives the template filled with that card, ready for Atelier to create in my n8n, unpublished. The template books through its own "El asistente pide reservar" branch, which reads the diary again before writing, so two patients cannot get the same slot.
+
 ## Run it
 
 Built with Python 3.14 on Windows. The screenshots use the Edge or Chrome already on the computer.
@@ -78,18 +82,20 @@ The clinics and the people of the CRM are real, so they live only in the local d
 ## The files
 
 - `main.py` — the API and the pages of the panel
-- `database.py` — SQLite storage: clients, tasks, reports, API spending and the CRM
+- `database.py` — SQLite storage: clients, tasks, reports, API spending and the CRM (the Automations tables are made in `automations.py`)
 - `crm.py` — the CRM: clinics, people, the history of contacts, next steps and what to do today
 - `clinic_web.py` — finds and reads a clinic's own website: checks that it is theirs and collects its social profiles
 - `xray.py` — the quick X-ray of a clinic: its rules, and the measuring (its website and Google PageSpeed)
 - `outreach.py` — the drafts of the message to write to a clinic, from its biggest hole
+- `automations.py` — the Automations agent: each clinic's WhatsApp booking service, its card, its rehearsal and its copy of the n8n template
+- `n8n/whatsapp-booking-template.ts` — the n8n template of the WhatsApp booking service, as n8n Workflow SDK code
 - `video.py` — the video with the proposal and its prototype: its words, and the recording (Playwright and ffmpeg)
 - `web_agent.py` — the Web agent, step 1: gathers everything, asks Claude and saves the report
 - `inspiration.py` — the Web agent, step 2: searches for websites that can inspire and looks at each one
 - `site_reader.py` — reads the website and checks the facts
 - `capture.py` — screenshots on desktop and on mobile, with Playwright
 - `pagespeed.py` — Google PageSpeed scores
-- `static/` — the panel (`index.html`), the report page (`report.html`), the inspiration page (`inspiration.html`), the CRM (`crm.html`, `clinic.html`, with their shared `crm.css` and `crm.js`) and the animated page the video is filmed from (`video.html`)
+- `static/` — the panel (`index.html`), the report page (`report.html`), the inspiration page (`inspiration.html`), the CRM (`crm.html`, `clinic.html`, with their shared `crm.css` and `crm.js`), the Automations page (`automations.html`) and the animated page the video is filmed from (`video.html`)
 - `sample_data/` — invented clinics for trying the CRM
 
 ## Departments
